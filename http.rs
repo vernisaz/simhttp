@@ -1,5 +1,6 @@
 extern crate simtpool;
 extern crate simjson;
+extern crate rslash;
 use std::{
     fs,
     io::{prelude::*, BufReader, self},
@@ -9,11 +10,12 @@ use std::{
     path::{Path,MAIN_SEPARATOR_STR},
 };
 use simtpool::ThreadPool;
-use simjson::JsonData::{Num,Text,Data,Arr,self};
+use simjson::JsonData::{Num,Text,Data,Arr,Bool,self};
 
 struct Mapping {
     web_path: String,
-    path: String
+    path: String,
+    cgi: bool
 }
 
 fn main() {
@@ -101,20 +103,34 @@ fn handle_connection(mut stream: TcpStream, mapping: &Vec<Mapping>) {
             return
         };
         let mut parts  = request_line.splitn(3, ' '); // split_whitespace
+        //  TODO bad request instead of unwrap
         let method = parts.next().unwrap();
         let mut path = parts.next().unwrap().to_string();
         let protocol = parts.next().unwrap();
-        if method == "GET" {
-            if path.chars().rev().nth(0) == Some('/') {
+        let query = match path.find('?') {
+            Some(qp) => {
+                let temp = &path[qp+1..].to_string();
+                path = path[0..qp].to_string();
+                Some(temp.clone())
+            }
+            None => None
+        };
+        if path.chars().rev().nth(0) == Some('/') {
                 path += "index.html"//.to_string()
+        }
+        let mut path_translated = None;
+        let mut cgi = false;
+        for e in mapping {
+            if path.starts_with(&e.web_path) {
+                path_translated = Some(rslash::adjust_separator(e.path.clone() + MAIN_SEPARATOR_STR + &path[e.web_path.len()..]));
+                eprintln!{"mapping found as {path_translated:?}"}
+                cgi = e.cgi;
+                break
             }
-            let mut path_translated = None;
-            for e in mapping {
-                if path.starts_with(&e.web_path) {
-                    path_translated = Some(e.path.clone() + MAIN_SEPARATOR_STR + &path[e.web_path.len()..]);
-                    eprintln!{"mapping found as {path_translated:?}"}
-                }
-            }
+        }
+        if method == "GET" {
+            
+            
             
             let (status_line,length,contents) =
             if path_translated.is_none() || !Path::new(&path_translated.as_ref().unwrap()).is_file() {
@@ -147,7 +163,14 @@ fn read_mapping(mapping: &Vec<JsonData>) -> Vec<Mapping> {
         
         let Some(trans) = trans else { continue };
         let Text(trans)  = trans else { continue };
-        res.push(Mapping{ web_path:path.into(), path: trans.into() })
+        let cgi = match e.get("CGI") {
+            None => false,
+            Some(cgi) => * match cgi {
+                Bool(cgi) => cgi,
+                _ => &false
+            }
+        };
+        res.push(Mapping{ web_path:path.into(), path: trans.into(), cgi: cgi })
     }
     res.sort_by(|a, b| a.web_path.len().cmp(&b.web_path.len()));
     res
