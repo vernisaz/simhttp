@@ -2,12 +2,14 @@ extern crate simtpool;
 extern crate simjson;
 extern crate rslash;
 use std::{
-    fs,
+    fs::{self,File},
     io::{prelude::*, BufReader, self},
-    net::{TcpListener, TcpStream},
+    net::{TcpListener, TcpStream,ToSocketAddrs},
     thread,
     sync::{atomic::{AtomicBool,Ordering}, Arc},
-    path::{Path,MAIN_SEPARATOR_STR},
+    path::{Path,MAIN_SEPARATOR_STR,PathBuf},
+    collections::HashMap,
+    process::{Stdio,Command},
 };
 use simtpool::ThreadPool;
 use simjson::JsonData::{Num,Text,Data,Arr,Bool,self};
@@ -16,6 +18,11 @@ struct Mapping {
     web_path: String,
     path: String,
     cgi: bool
+}
+
+struct CgiOut {
+    load: Vec<u8>,
+    pos: usize,
 }
 
 fn main() {
@@ -88,6 +95,7 @@ fn main() {
         });
         if stop.load(Ordering::SeqCst) { break }
     }
+    drop(tp)
 }
 
 fn handle_connection(mut stream: TcpStream, mapping: &Vec<Mapping>) {
@@ -111,26 +119,172 @@ fn handle_connection(mut stream: TcpStream, mapping: &Vec<Mapping>) {
             Some(qp) => {
                 let temp = &path[qp+1..].to_string();
                 path = path[0..qp].to_string();
-                Some(temp.clone())
+                temp.clone()
             }
-            None => None
+            None => "".to_string()
         };
         if path.chars().rev().nth(0) == Some('/') {
                 path += "index.html"//.to_string()
         }
         let mut path_translated = None;
         let mut cgi = false;
+        let mut name = "".to_string();
+        let mut path_info = None;
         for e in mapping {
             if path.starts_with(&e.web_path) {
-                path_translated = Some(rslash::adjust_separator(e.path.clone() + MAIN_SEPARATOR_STR + &path[e.web_path.len()..]));
-                eprintln!{"mapping found as {path_translated:?}"}
                 cgi = e.cgi;
+                if cgi {
+                    let mut cgi_file = PathBuf::new();
+                    cgi_file.push(e.path.clone());
+                    name = path[e.web_path.len()..].to_string();
+                    path_info = if let Some(pos) = name.find('/') {
+                        let temp = name[pos..].to_string();
+                        name = name[..pos].to_string();
+                        if cfg!(windows) {
+                        name = name + ".exe";}
+                        Some(temp)
+                    } else {
+                        None
+                    };
+                    path_translated = Some(rslash::adjust_separator(e.path.clone() + MAIN_SEPARATOR_STR + &name))
+                } else {
+                    path_translated = Some(rslash::adjust_separator(e.path.clone() + MAIN_SEPARATOR_STR + &path[e.web_path.len()..]));
+                    eprintln!{"mapping found as {path_translated:?}"}
+                }
                 break
-            }
+            } else { println!{"path {path} not start with {}", e.web_path} }
         }
+        //cgi = true;
+        let mut content_len = 0_u64;
+        let cgi_env = if cgi {
+            let mut env = HashMap::new();
+            env.insert("GATEWAY_INTERFACE".to_string(), "CGI/1.1".to_string());
+            env.insert("QUERY_STRING".to_string(), query);
+            env.insert("REMOTE_ADDR".to_string(), stream.peer_addr().unwrap().to_string()); // TODO add handling of an error
+            env.insert("REMOTE_HOST".to_string(), stream.peer_addr().unwrap().to_socket_addrs().unwrap().next().unwrap().to_string());
+            env.insert("REQUEST_METHOD".to_string(), method.to_string());
+            env.insert("SERVER_PROTOCOL".to_string(), protocol.to_string());
+            env.insert("SERVER_SOFTWARE".to_string(), "SimHTTP/1.01".to_string());
+            if let Some(path_info) = path_info {
+                 env.insert("PATH_INFO".to_string(), path_info);
+            }
+            if let Some(ref path_translated) = path_translated {
+                env.insert("PATH_TRANSLATED".to_string(), path_translated.into());
+            }
+            if !name.is_empty() {
+                env.insert("SCRIPT_NAME".to_string(), name);
+            }
+            while let Some(header) = headers.next() {
+                let header = header.unwrap();
+                
+                if header.is_empty() {
+                   break
+                }
+                println!{"heare: {header}"}
+                if let Some((key,val)) = header.split_once(": ") {
+                    let key = key.to_lowercase();
+                    let key = key.as_str();
+                    match key {
+                        "user-agent" => {env.insert("REMOTE_IDENT".to_string(), val.to_string());}
+                        "host" => {
+                            if let Some((host,port)) = val.split_once(':') {
+                               env.insert("SERVER_NAME".to_string(), host.to_string());
+                               env.insert("SERVER_PORT".to_string(), port.to_string());
+                            }
+                        }
+                        "content-length" => { // read load 
+                            //content_len = val.parse::<u64>().unwrap(); // TODO error hundling
+                            env.insert("CONTENT_LENGTH".to_string(), val.trim().to_string());
+                        }
+                        "content-type" => {
+                            env.insert("CONTENT_TYPE".to_string(), val.trim().to_string());
+                        }
+                        "authorization" => {
+                            env.insert("AUTH_TYPE".to_string(), val.to_string());
+                        }
+                        _ => ()
+                    }
+                }
+            }
+            if content_len > 0 {
+                let mut buffer = vec![0u8; content_len as usize];
+                if let Ok(_) = &stream.read_exact(&mut buffer) {
+                    env.insert("QUERY_STRING".to_string(), String::from_utf8_lossy(&buffer).into()); // more likelly ANSI
+                } 
+            }
+            Some(env)
+        } else { 
+            while let Some(header) = headers.next() {
+                let header = header.unwrap();
+                println!{"header: {header}"}
+                if header.is_empty() {
+                   
+                   break
+                }
+                if let Some((key,val)) = header.split_once(": ") {
+                     let key = key.to_lowercase();
+                    let key = key.as_str();
+                    match key {
+                        "content-length" => {  
+                            content_len = val.parse::<u64>().unwrap(); // TODO error hundling
+                        }
+                        &_ => ()
+                    }
+                }
+                
+            }
+            if content_len > 0 {
+                let mut buffer = vec![0u8; content_len as usize];
+                let _ = &stream.read_exact(&mut buffer);
+            }
+            None };
+        
         if method == "GET" {
-            
-            
+            println!{"servicing get"}
+             if cgi {
+                let load = Command::new(&path_translated.unwrap())
+                 .stdin(Stdio::null())
+                 .stderr(Stdio::inherit())
+                 .env_clear()
+                .envs(cgi_env.unwrap()).output();
+                let mut output = CgiOut{load:load.unwrap().stdout, pos:0};
+                let status = output.next();
+                if status.is_none() {
+                    let len = output.rest_len() ;
+                    stream.write_all(format!{"{protocol} 200 OK\r\nContent-Length: {len}\r\n\r\n"}.as_bytes()).unwrap();
+                    
+                    if len > 0 {
+                        stream.write_all(&output.rest()).unwrap()
+                    }
+                } else {
+                    let status = status.unwrap();
+                    if status.find(':') . is_some() {
+                        stream.write_all(format!{"{protocol} 200 OK\r\n{status}\r\n"}.as_bytes()).unwrap();
+                    } else {
+                        
+                        let (code, msg) = 
+                        match status.split_once(' ') {
+                            Some((code,msg)) => (code.to_string(),msg.to_string()),
+                            None => {
+                                match status.as_str() {
+                                    "200" => ("200".to_string(),"OK".to_string()),
+                                    _ => (status.clone(),format!{"ERROR {status}"})
+                                }
+                            }
+                        };
+                        stream.write_all(format!{"{protocol} {code} {msg}\r\n"}.as_bytes()).unwrap();
+                    }
+                    while let Some(header)  = output.next() {
+                        stream.write_all(format!{"{header}\r\n"}.as_bytes()).unwrap()
+                    }
+                    let len = output.rest_len() ;
+                    stream.write_all(format!{"Content-Length: {len}\r\n\r\n"}.as_bytes()).unwrap();
+                    
+                    if len > 0 {
+                        stream.write_all(&output.rest()).unwrap();
+                    }
+                }
+            } else {
             
             let (status_line,length,contents) =
             if path_translated.is_none() || !Path::new(&path_translated.as_ref().unwrap()).is_file() {
@@ -138,15 +292,22 @@ fn handle_connection(mut stream: TcpStream, mapping: &Vec<Mapping>) {
                 let length = contents.len();
                 (format!{"{protocol} 404 NOT FOUND"}, length, contents.to_string())
             } else {
-                let contents = fs::read_to_string(&path_translated.unwrap()).unwrap();
+               
+                let mut f = File::open(&path_translated.unwrap()).unwrap( );
+                let mut buffer = Vec::new();
+
+                // read the whole file
+                f.read_to_end(&mut buffer).unwrap();
+                let contents = String::from_utf8_lossy(&buffer);
                 let length = contents.len();
-                (format!{"{protocol} 200 OK"}, length, contents)
+                (format!{"{protocol} 200 OK"}, length, contents.to_string())
             };
         
             let response =
                 format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
         
             stream.write_all(response.as_bytes()).unwrap();
+            }
         }
     };
 }
@@ -170,8 +331,49 @@ fn read_mapping(mapping: &Vec<JsonData>) -> Vec<Mapping> {
                 _ => &false
             }
         };
-        res.push(Mapping{ web_path:path.into(), path: trans.into(), cgi: cgi })
+        res.push(Mapping{ web_path:path.to_string()  + "/", path: trans.into(), cgi: cgi })
     }
-    res.sort_by(|a, b| a.web_path.len().cmp(&b.web_path.len()));
+    res.sort_by(|a, b| b.web_path.len().cmp(&a.web_path.len()));
     res
 }
+
+impl CgiOut {
+    fn next(&mut self) -> Option<String> {
+        let start = self.pos;
+        let mut met = false;
+        while self.pos < self.load.len() {
+            if met && self.load[self.pos] == b'\n' {
+                if self.pos - start <= 2 {
+                    return None
+                } else {
+                    return Some(String::from_utf8(self.load[start..self.pos-1].to_vec()).unwrap())
+                }
+            } else { met = false }
+            if self.load[self.pos] == b'\r' { met = true; }
+            self.pos += 1
+        }
+        self.pos = start;
+        None
+    }
+    
+    fn rest_len(&mut self) -> usize {
+        self.load.len() - self.pos
+    }
+    
+    fn rest(&mut self) -> Vec<u8> {
+        self.load[self.pos..].to_vec()
+    }
+}
+
+/*fn read_n<R>(reader: R, bytes_to_read: u64) -> Vec<u8>
+where
+    R: Read,
+{
+    let mut buf = vec![];
+    let mut chunk = reader.take(bytes_to_read);
+    // Do appropriate error handling for your situation
+    // Maybe it's OK if you didn't read enough bytes?
+    let n = chunk.read_to_end(&mut buf).expect("Didn't read enough");
+    assert_eq!(bytes_to_read as usize, n);
+    buf
+}*/
