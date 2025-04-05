@@ -6,3 +6,6 @@ It is a personal web server for Rust web appllications.
 ## Configuring
 
 ## Running
+
+## Status
+

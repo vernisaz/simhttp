@@ -68,6 +68,26 @@ fn main() {
         eprintln!{"Incorrect mapping configured"}
         return
     };
+    let mut mime2 = HashMap::new(); 
+    if let Some(mime) = env.get("mime") {
+        if let Arr(mime) = mime {
+            
+            for el in mime {
+                if let Data(el) = el {
+                    if let Some(en) = el.get("ext") {
+                        if let Text(en) = en {
+                            if let Some(val) = el.get("type") {
+                                if let Text(val) = val {
+                                    mime2.insert(en.to_string(),val.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            } 
+        }
+    };
+    let mime = Arc::new(mime2);
     
     let tp = ThreadPool::new(*tp as usize);
 
@@ -89,17 +109,21 @@ fn main() {
     for stream in listener.incoming() {
         let stream = stream.unwrap();
         let mapping = Arc::clone(&mapping);
+        let mime = Arc::clone(&mime);
         tp.execute(move || {
             eprintln!{"request from {:?}", stream.peer_addr()}
-            handle_connection(stream, &mapping) 
+            // TODO loop until stream closed
+            while handle_connection(&stream, &mapping, &mime) . is_ok() {
+                
+            }
         });
         if stop.load(Ordering::SeqCst) { break }
     }
     drop(tp)
 }
 
-fn handle_connection(mut stream: TcpStream, mapping: &Vec<Mapping>) {
-    let buf_reader = BufReader::new(&stream);
+fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &HashMap<String,String>) -> io::Result<()> {
+    let buf_reader = BufReader::new(stream);
     let mut headers = buf_reader.lines();
     /*let Ok(headers) = headers else {
         eprintln!{"bad request"}
@@ -108,7 +132,7 @@ fn handle_connection(mut stream: TcpStream, mapping: &Vec<Mapping>) {
     if let Some(request_line) = headers.next() {
         let Ok(request_line) = request_line else {
             eprintln!{"bad request"}
-            return
+            return Ok(()) //Err()
         };
         let mut parts  = request_line.splitn(3, ' '); // split_whitespace
         //  TODO bad request instead of unwrap
@@ -156,6 +180,7 @@ fn handle_connection(mut stream: TcpStream, mapping: &Vec<Mapping>) {
         }
         //cgi = true;
         let mut content_len = 0_u64;
+        let mut extra = None;
         let cgi_env = if cgi {
             let mut env = HashMap::new();
             env.insert("GATEWAY_INTERFACE".to_string(), "CGI/1.1".to_string());
@@ -202,15 +227,14 @@ fn handle_connection(mut stream: TcpStream, mapping: &Vec<Mapping>) {
                         "authorization" => {
                             env.insert("AUTH_TYPE".to_string(), val.to_string());
                         }
-                        _ => ()
+                        _ => {env.insert("HTTP_".to_owned() + &key.to_uppercase().replace("-", "_").to_string(), val.to_string());},
                     }
                 }
             }
             if content_len > 0 {
                 let mut buffer = vec![0u8; content_len as usize];
-                if let Ok(_) = &stream.read_exact(&mut buffer) {
-                    env.insert("QUERY_STRING".to_string(), String::from_utf8_lossy(&buffer).into()); // more likelly ANSI
-                } 
+                let _ = stream.read_exact(&mut buffer)?;
+                extra = Some(buffer)
             }
             Some(env)
         } else { 
@@ -228,6 +252,8 @@ fn handle_connection(mut stream: TcpStream, mapping: &Vec<Mapping>) {
                         "content-length" => {  
                             content_len = val.parse::<u64>().unwrap(); // TODO error hundling
                         }
+                        /*"location" => {
+                        }*/
                         &_ => ()
                     }
                 }
@@ -239,17 +265,27 @@ fn handle_connection(mut stream: TcpStream, mapping: &Vec<Mapping>) {
             }
             None };
         
-        if method == "GET" {
+        if method == "GET" || method == "POST" {
             println!{"servicing get"}
              if cgi {
-                let load = Command::new(&path_translated.unwrap())
-                 .stdin(Stdio::null())
+                let mut load = Command::new(&path_translated.unwrap())
+                 .stdout(Stdio::piped())
+                 .stdin(Stdio::piped())
                  .stderr(Stdio::inherit())
                  .env_clear()
-                .envs(cgi_env.unwrap()).output();
-                let mut output = CgiOut{load:load.unwrap().stdout, pos:0};
+                .envs(cgi_env.unwrap()).spawn()?;
+                
+                let mut stdin = load.stdin.take().expect("Failed to open stdin");
+                thread::spawn(move || {
+                    if let Some(extra) = extra {
+                        stdin.write_all(&extra).expect("Failed to write to stdin");
+                    }
+                });
+
+                let output = load.wait_with_output()?;
+                let mut output = CgiOut{load:output.stdout, pos:0};
                 let status = output.next();
-                if status.is_none() {
+                if status.is_none() { // no headers
                     let len = output.rest_len() ;
                     stream.write_all(format!{"{protocol} 200 OK\r\nContent-Length: {len}\r\n\r\n"}.as_bytes()).unwrap();
                     
@@ -258,10 +294,23 @@ fn handle_connection(mut stream: TcpStream, mapping: &Vec<Mapping>) {
                     }
                 } else {
                     let status = status.unwrap();
+                    let mut headers = String::new();
+                    let mut status =
                     if status.find(':') . is_some() {
-                        stream.write_all(format!{"{protocol} 200 OK\r\n{status}\r\n"}.as_bytes()).unwrap();
+                        if let Some((key,_)) = status.split_once(": ") {
+                            let key = key.to_lowercase();
+                            if key != "content-length" {
+                                headers.push_str(&format!{"{status}\r\n"});
+                            }
+                            if key.to_lowercase() == "location" {
+                                format!{"{protocol} 302 Found\r\n"}
+                            } else {
+                                format!{"{protocol} 200 OK\r\n"}
+                            }
+                        } else { // never
+                            format!{"{protocol} 200 OK\r\n"}
+                        }
                     } else {
-                        
                         let (code, msg) = 
                         match status.split_once(' ') {
                             Some((code,msg)) => (code.to_string(),msg.to_string()),
@@ -272,44 +321,64 @@ fn handle_connection(mut stream: TcpStream, mapping: &Vec<Mapping>) {
                                 }
                             }
                         };
-                        stream.write_all(format!{"{protocol} {code} {msg}\r\n"}.as_bytes()).unwrap();
-                    }
-                    while let Some(header)  = output.next() {
-                        stream.write_all(format!{"{header}\r\n"}.as_bytes()).unwrap()
-                    }
-                    let len = output.rest_len() ;
-                    stream.write_all(format!{"Content-Length: {len}\r\n\r\n"}.as_bytes()).unwrap();
+                        format!{"{protocol} {code} {msg}\r\n"}
+                    };
                     
+                    while let Some(header)  = output.next() {
+                        if let Some((key,_)) = header.split_once(": ") {
+                            let key = key.to_lowercase();
+                            if key == "location" {
+                                status = format!{"{protocol} 302 Found\r\n"}
+                            } 
+                            if key != "content-length" {
+                                headers.push_str(&format!{"{header}\r\n"})
+                            }
+                        }
+                        
+                    }
+                    stream.write_all(status.as_bytes())?;
+                    stream.write_all(headers.as_bytes())?;
+                    let len = output.rest_len() ;
+                    stream.write_all(format!{"Content-Length: {len}\r\n\r\n"}.as_bytes())?;
+                    // accumulate all to calculate code 302 for example
                     if len > 0 {
                         stream.write_all(&output.rest()).unwrap();
                     }
                 }
             } else {
+                let (status_line,length,c_type,contents) =
+                if path_translated.is_none() || !Path::new(&path_translated.as_ref().unwrap()).is_file() {
+                    let contents = include_str!{"404.html"};
+                    let contents = contents.as_bytes();
+                    let length = contents.len();
+                    let c_type = "text/html";
+                    (format!{"{protocol} 404 NOT FOUND"}, length, c_type, contents.to_vec())
+                } else {
+                    let path_translated = path_translated.unwrap();
+                    let mut f = File::open(&path_translated)?;
+                    let mut buffer = Vec::new();
+                    let c_type =
+                    if let Some(pos) = path_translated.rfind('.') {
+                        mime.get(&path_translated[pos+1..])
+                    } else {None};
+                    // read the whole file
+                    f.read_to_end(&mut buffer)?;
+                    let c_type = if c_type.is_none() {
+                        "octet-stream"
+                    } else { c_type.unwrap() };
+                    let length = buffer.len();
+                    (format!{"{protocol} 200 OK"}, length, c_type, buffer)
+                };
             
-            let (status_line,length,contents) =
-            if path_translated.is_none() || !Path::new(&path_translated.as_ref().unwrap()).is_file() {
-                let contents = include_str!{"404.html"};
-                let length = contents.len();
-                (format!{"{protocol} 404 NOT FOUND"}, length, contents.to_string())
-            } else {
-               
-                let mut f = File::open(&path_translated.unwrap()).unwrap( );
-                let mut buffer = Vec::new();
-
-                // read the whole file
-                f.read_to_end(&mut buffer).unwrap();
-                let contents = String::from_utf8_lossy(&buffer);
-                let length = contents.len();
-                (format!{"{protocol} 200 OK"}, length, contents.to_string())
-            };
-        
-            let response =
-                format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
-        
-            stream.write_all(response.as_bytes()).unwrap();
+                let response =
+                    format!("{status_line}\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\n\r\n");
+            
+                stream.write_all(response.as_bytes())?;
+                stream.write_all(&contents)?
             }
         }
-    };
+    }
+    Ok(())
 }
 
 fn read_mapping(mapping: &Vec<JsonData>) -> Vec<Mapping> {
