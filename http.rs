@@ -3,7 +3,7 @@ extern crate simjson;
 extern crate rslash;
 use std::{
     fs::{self,File},
-    io::{prelude::*, BufReader, self},
+    io::{prelude::*, Error, ErrorKind, BufReader, self},
     net::{TcpListener, TcpStream,ToSocketAddrs},
     thread,
     sync::{atomic::{AtomicBool,Ordering}, Arc},
@@ -111,7 +111,7 @@ fn main() {
         let mapping = Arc::clone(&mapping);
         let mime = Arc::clone(&mime);
         tp.execute(move || {
-            eprintln!{"request from {:?}", stream.peer_addr()}
+            //eprintln!{"request from {:?}", stream.peer_addr()}
             // TODO loop until stream closed
             while handle_connection(&stream, &mapping, &mime) . is_ok() {
                 
@@ -123,155 +123,151 @@ fn main() {
 }
 
 fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &HashMap<String,String>) -> io::Result<()> {
-    let buf_reader = BufReader::new(stream);
-    let mut headers = buf_reader.lines();
-    /*let Ok(headers) = headers else {
+    let mut buf_reader = BufReader::new(stream);
+    let mut line = String::new();
+    //let lines = buf_reader.lines(); // may still work
+    let len = buf_reader.read_line(&mut line)?;
+    if len < 10 { // http/1.x ...
         eprintln!{"bad request"}
-        return
-    };*/
-    if let Some(request_line) = headers.next() {
-        let Ok(request_line) = request_line else {
-            eprintln!{"bad request"}
-            return Ok(()) //Err()
-        };
-        let mut parts  = request_line.splitn(3, ' '); // split_whitespace
-        //  TODO bad request instead of unwrap
-        let method = parts.next().unwrap();
-        let mut path = parts.next().unwrap().to_string();
-        let protocol = parts.next().unwrap();
-        let query = match path.find('?') {
-            Some(qp) => {
-                let temp = &path[qp+1..].to_string();
-                path = path[0..qp].to_string();
-                temp.clone()
-            }
-            None => "".to_string()
-        };
-        if path.chars().rev().nth(0) == Some('/') {
-                path += "index.html"//.to_string()
+        return Err(Error::new(ErrorKind::Other, "no data"))
+    }
+    line.truncate(len-2); // \r\n
+    let request_line = line.clone();
+    let mut parts  = request_line.splitn(3, ' '); // split_whitespace
+    let method = parts.next().unwrap();
+    let mut path = parts.next().unwrap().to_string();
+    let protocol = parts.next().unwrap();
+    let query = match path.find('?') {
+        Some(qp) => {
+            let temp = &path[qp+1..].to_string();
+            path = path[0..qp].to_string();
+            temp.clone()
         }
-        let mut path_translated = None;
-        let mut cgi = false;
-        let mut name = "".to_string();
-        let mut path_info = None;
-        for e in mapping {
-            if path.starts_with(&e.web_path) {
-                cgi = e.cgi;
-                if cgi {
-                    let mut cgi_file = PathBuf::new();
-                    cgi_file.push(e.path.clone());
-                    name = path[e.web_path.len()..].to_string();
-                    path_info = if let Some(pos) = name.find('/') {
-                        let temp = name[pos..].to_string();
-                        name = name[..pos].to_string();
-                        if cfg!(windows) {
-                        name = name + ".exe";}
-                        Some(temp)
-                    } else {
-                        None
-                    };
-                    path_translated = Some(rslash::adjust_separator(e.path.clone() + MAIN_SEPARATOR_STR + &name))
+        None => "".to_string()
+    };
+    if path.chars().rev().nth(0) == Some('/') {
+            path += "index.html"//.to_string()
+    }
+    let mut path_translated = None;
+    let mut cgi = false;
+    let mut name = "".to_string();
+    let mut path_info = None;
+    for e in mapping {
+        if path.starts_with(&e.web_path) {
+            cgi = e.cgi;
+            if cgi {
+                let mut cgi_file = PathBuf::new();
+                cgi_file.push(e.path.clone());
+                name = path[e.web_path.len()..].to_string();
+                path_info = if let Some(pos) = name.find('/') {
+                    let temp = name[pos..].to_string();
+                    name = name[..pos].to_string();
+                    Some(temp)
                 } else {
-                    path_translated = Some(rslash::adjust_separator(e.path.clone() + MAIN_SEPARATOR_STR + &path[e.web_path.len()..]));
-                    eprintln!{"mapping found as {path_translated:?}"}
-                }
-                break
-            } else { println!{"path {path} not start with {}", e.web_path} }
+                    None
+                };
+                if cfg!(windows) {
+                    name = name + ".exe";}
+                path_translated = Some(rslash::adjust_separator(e.path.clone() + MAIN_SEPARATOR_STR + &name))
+            } else {
+                path_translated = Some(rslash::adjust_separator(e.path.clone() + MAIN_SEPARATOR_STR + &path[e.web_path.len()..]));
+                eprintln!{"mapping found as {path_translated:?}"}
+            }
+            break
+        } else { println!{"path {path} not start with {}", e.web_path} }
+    }
+    let mut content_len = 0_u64;
+    let mut extra = None;
+    let cgi_env = if cgi {
+        let mut env = HashMap::new();
+        env.insert("GATEWAY_INTERFACE".to_string(), "CGI/1.1".to_string());
+        env.insert("QUERY_STRING".to_string(), query);
+        env.insert("REMOTE_ADDR".to_string(), stream.peer_addr().unwrap().to_string()); // TODO add handling of an error
+        env.insert("REMOTE_HOST".to_string(), stream.peer_addr().unwrap().to_socket_addrs().unwrap().next().unwrap().to_string());
+        env.insert("REQUEST_METHOD".to_string(), method.to_string());
+        env.insert("SERVER_PROTOCOL".to_string(), protocol.to_string());
+        env.insert("SERVER_SOFTWARE".to_string(), "SimHTTP/1.01".to_string());
+        if let Some(path_info) = path_info {
+             env.insert("PATH_INFO".to_string(), path_info);
         }
-        //cgi = true;
-        let mut content_len = 0_u64;
-        let mut extra = None;
-        let cgi_env = if cgi {
-            let mut env = HashMap::new();
-            env.insert("GATEWAY_INTERFACE".to_string(), "CGI/1.1".to_string());
-            env.insert("QUERY_STRING".to_string(), query);
-            env.insert("REMOTE_ADDR".to_string(), stream.peer_addr().unwrap().to_string()); // TODO add handling of an error
-            env.insert("REMOTE_HOST".to_string(), stream.peer_addr().unwrap().to_socket_addrs().unwrap().next().unwrap().to_string());
-            env.insert("REQUEST_METHOD".to_string(), method.to_string());
-            env.insert("SERVER_PROTOCOL".to_string(), protocol.to_string());
-            env.insert("SERVER_SOFTWARE".to_string(), "SimHTTP/1.01".to_string());
-            if let Some(path_info) = path_info {
-                 env.insert("PATH_INFO".to_string(), path_info);
-            }
-            if let Some(ref path_translated) = path_translated {
-                env.insert("PATH_TRANSLATED".to_string(), path_translated.into());
-            }
-            if !name.is_empty() {
-                env.insert("SCRIPT_NAME".to_string(), name);
-            }
-            while let Some(header) = headers.next() {
-                let header = header.unwrap();
-                
-                if header.is_empty() {
-                   break
-                }
-                println!{"heare: {header}"}
-                if let Some((key,val)) = header.split_once(": ") {
-                    let key = key.to_lowercase();
-                    let key = key.as_str();
-                    match key {
-                        "user-agent" => {env.insert("REMOTE_IDENT".to_string(), val.to_string());}
-                        "host" => {
-                            if let Some((host,port)) = val.split_once(':') {
-                               env.insert("SERVER_NAME".to_string(), host.to_string());
-                               env.insert("SERVER_PORT".to_string(), port.to_string());
-                            }
+        if let Some(ref path_translated) = path_translated {
+            env.insert("PATH_TRANSLATED".to_string(), path_translated.into());
+        }
+        if !name.is_empty() {
+            env.insert("SCRIPT_NAME".to_string(), name);
+        }
+        line.clear();
+        while 2 < buf_reader.read_line(&mut line)? {
+            line.truncate(line.len()-2); // \r\n
+
+            //eprintln!{"heare: {line}"}
+            if let Some((key,val)) = line.split_once(": ") {
+                let key = key.to_lowercase();
+                let key = key.as_str();
+                match key {
+                    "user-agent" => {env.insert("REMOTE_IDENT".to_string(), val.to_string());}
+                    "host" => {
+                        if let Some((host,port)) = val.split_once(':') {
+                           env.insert("SERVER_NAME".to_string(), host.to_string());
+                           env.insert("SERVER_PORT".to_string(), port.to_string());
                         }
-                        "content-length" => { // read load 
-                            //content_len = val.parse::<u64>().unwrap(); // TODO error hundling
-                            env.insert("CONTENT_LENGTH".to_string(), val.trim().to_string());
-                        }
-                        "content-type" => {
-                            env.insert("CONTENT_TYPE".to_string(), val.trim().to_string());
-                        }
-                        "authorization" => {
-                            env.insert("AUTH_TYPE".to_string(), val.to_string());
-                        }
-                        _ => {env.insert("HTTP_".to_owned() + &key.to_uppercase().replace("-", "_").to_string(), val.to_string());},
                     }
-                }
-            }
-            if content_len > 0 {
-                let mut buffer = vec![0u8; content_len as usize];
-                let _ = stream.read_exact(&mut buffer)?;
-                extra = Some(buffer)
-            }
-            Some(env)
-        } else { 
-            while let Some(header) = headers.next() {
-                let header = header.unwrap();
-                println!{"header: {header}"}
-                if header.is_empty() {
-                   
-                   break
-                }
-                if let Some((key,val)) = header.split_once(": ") {
-                     let key = key.to_lowercase();
-                    let key = key.as_str();
-                    match key {
-                        "content-length" => {  
-                            content_len = val.parse::<u64>().unwrap(); // TODO error hundling
-                        }
-                        /*"location" => {
-                        }*/
-                        &_ => ()
+                    "content-length" => { // read load 
+                        content_len = val.parse::<u64>().unwrap(); // TODO error hundling
+                        env.insert("CONTENT_LENGTH".to_string(), val.trim().to_string());
                     }
+                    "content-type" => {
+                        env.insert("CONTENT_TYPE".to_string(), val.trim().to_string());
+                    }
+                    "authorization" => {
+                        env.insert("AUTH_TYPE".to_string(), val.to_string());
+                    }
+                    _ => {env.insert("HTTP_".to_owned() + &key.to_uppercase().replace("-", "_").to_string(), val.to_string());},
                 }
-                
             }
-            if content_len > 0 {
-                let mut buffer = vec![0u8; content_len as usize];
-                let _ = &stream.read_exact(&mut buffer);
+            line.clear()
+        }
+        // application/x-www-form-urlencoded
+        if content_len > 0 {
+            let mut buffer = vec![0u8; content_len as usize];
+             buf_reader.read_exact(&mut buffer)?;
+            //println!{"input:-> {}", String::from_utf8_lossy( &buffer)}
+            extra = Some(buffer)
+        }
+        Some(env)
+    } else { 
+        while 2 < buf_reader.read_line(&mut line)? {
+            line.truncate(line.len()-2); // \r\n
+            //eprintln!{"header: {line}"}
+            if let Some((key,val)) = line.split_once(": ") {
+                 let key = key.to_lowercase();
+                let key = key.as_str();
+                match key {
+                    "content-length" => {  
+                        content_len = val.parse::<u64>().unwrap(); // TODO error hundling
+                    }
+                    /*"location" => {
+                    }*/
+                    &_ => ()
+                }
             }
-            None };
+            
+        }
+        if content_len > 0 {
+            std::io::copy(&mut buf_reader.by_ref().take(content_len), &mut std::io::sink())?;
+            //buf_reader.seek_relative(content_len)?
+        }
+        None };
         
         if method == "GET" || method == "POST" {
-            println!{"servicing get"}
+           // eprintln!{"servicing {method} to {path_translated:?}"}
              if cgi {
-                let mut load = Command::new(&path_translated.unwrap())
+                let path_translated = PathBuf::from(&path_translated.unwrap());
+                let mut load = Command::new(&path_translated)
                  .stdout(Stdio::piped())
                  .stdin(Stdio::piped())
                  .stderr(Stdio::inherit())
+                 .current_dir(&path_translated.parent().unwrap())
                  .env_clear()
                 .envs(cgi_env.unwrap()).spawn()?;
                 
@@ -279,11 +275,14 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
                 thread::spawn(move || {
                     if let Some(extra) = extra {
                         stdin.write_all(&extra).expect("Failed to write to stdin");
+                        //eprintln!{"written: {}", String::from_utf8_lossy( &extra)}
                     }
                 });
 
                 let output = load.wait_with_output()?;
+               // println!{"load {}", String::from_utf8_lossy( &output.stdout)}
                 let mut output = CgiOut{load:output.stdout, pos:0};
+                
                 let status = output.next();
                 if status.is_none() { // no headers
                     let len = output.rest_len() ;
@@ -339,10 +338,12 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
                     stream.write_all(status.as_bytes())?;
                     stream.write_all(headers.as_bytes())?;
                     let len = output.rest_len() ;
+                    //eprintln!{"{status}\n{headers}Content-Length: {len}\r\n\r\n"}
                     stream.write_all(format!{"Content-Length: {len}\r\n\r\n"}.as_bytes())?;
                     // accumulate all to calculate code 302 for example
                     if len > 0 {
-                        stream.write_all(&output.rest()).unwrap();
+                        stream.write_all(&output.rest())?;
+                        //eprintln!{"{:?}", String::from_utf8_lossy(&output.rest())}
                     }
                 }
             } else {
@@ -377,7 +378,6 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
                 stream.write_all(&contents)?
             }
         }
-    }
     Ok(())
 }
 
@@ -426,11 +426,11 @@ impl CgiOut {
     }
     
     fn rest_len(&mut self) -> usize {
-        self.load.len() - self.pos
+        self.load.len() - self.pos - 1
     }
     
     fn rest(&mut self) -> Vec<u8> {
-        self.load[self.pos..].to_vec()
+        self.load[self.pos+1..].to_vec()
     }
 }
 
