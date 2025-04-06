@@ -10,6 +10,8 @@ use std::{
     path::{Path,MAIN_SEPARATOR_STR,PathBuf},
     collections::HashMap,
     process::{Stdio,Command},
+    time::{SystemTime,UNIX_EPOCH},
+    env,
 };
 use simtpool::ThreadPool;
 use simjson::JsonData::{Num,Text,Data,Arr,Bool,self};
@@ -119,6 +121,7 @@ fn main() {
         });
         if stop.load(Ordering::SeqCst) { break }
     }
+    println!{"Stopping the server..."}
     drop(tp)
 }
 
@@ -145,9 +148,7 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
         }
         None => "".to_string()
     };
-    if path.chars().rev().nth(0) == Some('/') {
-            path += "index.html"//.to_string()
-    }
+
     let mut path_translated = None;
     let mut cgi = false;
     let mut name = "".to_string();
@@ -170,16 +171,23 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
                     name = name + ".exe";}
                 path_translated = Some(rslash::adjust_separator(e.path.clone() + MAIN_SEPARATOR_STR + &name))
             } else {
+                if path.chars().rev().nth(0) == Some('/') {
+                    path += "index.html"
+                }
                 path_translated = Some(rslash::adjust_separator(e.path.clone() + MAIN_SEPARATOR_STR + &path[e.web_path.len()..]));
-                eprintln!{"mapping found as {path_translated:?}"}
+                //eprintln!{"mapping found as {path_translated:?}"}
             }
             break
-        } else { println!{"path {path} not start with {}", e.web_path} }
+        } //else { println!{"path {path} not start with {}", e.web_path} }
     }
+    
     let mut content_len = 0_u64;
     let mut extra = None;
     let cgi_env = if cgi {
-        let mut env = HashMap::new();
+        let mut env : HashMap<String, String> =
+            env::vars().filter(|&(ref k, _)|
+             k != "PATH"
+         ).collect();
         env.insert("GATEWAY_INTERFACE".to_string(), "CGI/1.1".to_string());
         env.insert("QUERY_STRING".to_string(), query);
         env.insert("REMOTE_ADDR".to_string(), stream.peer_addr().unwrap().to_string()); // TODO add handling of an error
@@ -187,11 +195,23 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
         env.insert("REQUEST_METHOD".to_string(), method.to_string());
         env.insert("SERVER_PROTOCOL".to_string(), protocol.to_string());
         env.insert("SERVER_SOFTWARE".to_string(), "SimHTTP/1.01".to_string());
-        if let Some(path_info) = path_info {
-             env.insert("PATH_INFO".to_string(), path_info);
+        if let Some(ref path_info) = path_info {
+             env.insert("PATH_INFO".to_string(), path_info.into());
         }
         if let Some(ref path_translated) = path_translated {
-            env.insert("PATH_TRANSLATED".to_string(), path_translated.into());
+            let mut path_translated = PathBuf::from(&path_translated);
+            path_translated.pop();
+            let mut path_translated = path_translated.as_path().canonicalize().unwrap();
+            if !path_translated.is_absolute() {
+                 path_translated = env::current_dir()?.join(path_translated)
+            }
+            let path_translated = if let Some(ref path_info) = path_info {
+                rslash::adjust_separator(path_translated.to_str().unwrap().to_string() + &path_info)
+            } else {
+                path_translated.to_str().unwrap().to_string()
+            };
+            
+            env.insert("PATH_TRANSLATED".to_string(), path_translated);
         }
         if !name.is_empty() {
             env.insert("SCRIPT_NAME".to_string(), name);
@@ -226,6 +246,9 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
                 }
             }
             line.clear()
+        }
+        if !env.contains_key("CONTENT_TYPE") {
+            env.insert("CONTENT_TYPE".to_string(), "text/html".to_string());
         }
         // application/x-www-form-urlencoded
         if content_len > 0 {
@@ -282,12 +305,11 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
                 let output = load.wait_with_output()?;
                // println!{"load {}", String::from_utf8_lossy( &output.stdout)}
                 let mut output = CgiOut{load:output.stdout, pos:0};
-                
+                let mut code_num = 200;
                 let status = output.next();
                 if status.is_none() { // no headers
                     let len = output.rest_len() ;
                     stream.write_all(format!{"{protocol} 200 OK\r\nContent-Length: {len}\r\n\r\n"}.as_bytes()).unwrap();
-                    
                     if len > 0 {
                         stream.write_all(&output.rest()).unwrap()
                     }
@@ -296,13 +318,21 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
                     let mut headers = String::new();
                     let mut status =
                     if status.find(':') . is_some() {
-                        if let Some((key,_)) = status.split_once(": ") {
+                        if let Some((key,val)) = status.split_once(": ") {
                             let key = key.to_lowercase();
                             if key != "content-length" {
                                 headers.push_str(&format!{"{status}\r\n"});
+                            } else {
+                                
                             }
-                            if key.to_lowercase() == "location" {
+                            if key == "location" {
+                                code_num = 302;
                                 format!{"{protocol} 302 Found\r\n"}
+                            } else if key == "status" {
+                                if let Some((code, _)) = val.split_once(" ") {
+                                    code_num = code.parse::<u16>().unwrap();
+                                }
+                                format!{"{protocol} {val}\r\n"}
                             } else {
                                 format!{"{protocol} 200 OK\r\n"}
                             }
@@ -320,40 +350,50 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
                                 }
                             }
                         };
+                        code_num = code.parse::<u16>().unwrap();
                         format!{"{protocol} {code} {msg}\r\n"}
                     };
                     
                     while let Some(header)  = output.next() {
-                        if let Some((key,_)) = header.split_once(": ") {
+                        if let Some((key,val)) = header.split_once(": ") {
                             let key = key.to_lowercase();
                             if key == "location" {
+                                code_num = 302;
                                 status = format!{"{protocol} 302 Found\r\n"}
-                            } 
+                            } else if key == "status" {
+                                if let Some((code, _)) = val.split_once(" ") {
+                                    code_num = code.parse::<u16>().unwrap();
+                                    status = format!{"{protocol} {val}\r\n"}
+                                }
+                            }
                             if key != "content-length" {
                                 headers.push_str(&format!{"{header}\r\n"})
+                            } else {
+                                
                             }
                         }
                         
                     }
                     stream.write_all(status.as_bytes())?;
                     stream.write_all(headers.as_bytes())?;
-                    let len = output.rest_len() ;
+                    let len = output.rest_len() ; // why not content-length ?
                     //eprintln!{"{status}\n{headers}Content-Length: {len}\r\n\r\n"}
                     stream.write_all(format!{"Content-Length: {len}\r\n\r\n"}.as_bytes())?;
-                    // accumulate all to calculate code 302 for example
                     if len > 0 {
                         stream.write_all(&output.rest())?;
                         //eprintln!{"{:?}", String::from_utf8_lossy(&output.rest())}
                     }
                 }
+                println!{"{} -- [{:>10}] \"{request_line}\" {code_num} {}", stream.peer_addr().unwrap().to_string(),
+                   SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis(), output.rest_len()}
             } else {
-                let (status_line,length,c_type,contents) =
+                let (status_line,code,length,c_type,contents) =
                 if path_translated.is_none() || !Path::new(&path_translated.as_ref().unwrap()).is_file() {
                     let contents = include_str!{"404.html"};
                     let contents = contents.as_bytes();
                     let length = contents.len();
                     let c_type = "text/html";
-                    (format!{"{protocol} 404 NOT FOUND"}, length, c_type, contents.to_vec())
+                    (format!{"{protocol} 404 NOT FOUND"}, 404, length, c_type, contents.to_vec())
                 } else {
                     let path_translated = path_translated.unwrap();
                     let mut f = File::open(&path_translated)?;
@@ -368,14 +408,17 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
                         "octet-stream"
                     } else { c_type.unwrap() };
                     let length = buffer.len();
-                    (format!{"{protocol} 200 OK"}, length, c_type, buffer)
+                    (format!{"{protocol} 200 OK"}, 200, length, c_type, buffer)
                 };
             
                 let response =
                     format!("{status_line}\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\n\r\n");
             
                 stream.write_all(response.as_bytes())?;
-                stream.write_all(&contents)?
+                stream.write_all(&contents)?;
+                // log
+                println!{"{} -- [{:>10}] \"{request_line}\" {code} {length}", stream.peer_addr().unwrap().to_string(),
+                    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()}
             }
         }
     Ok(())
