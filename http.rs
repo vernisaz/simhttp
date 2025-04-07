@@ -104,21 +104,24 @@ fn main() {
                 io::stdin().read_line(&mut input).expect("Failed to read line");
                 if input.starts_with("q") {
                     stop_one.store(true, Ordering::SeqCst);
+                    //println!{"Stop accepted"}
                     break
                 }
+                input.clear()
             }
         });
+    
     for stream in listener.incoming() {
         let stream = stream.unwrap();
         let mapping = Arc::clone(&mapping);
         let mime = Arc::clone(&mime);
+        let stop_two = stop.clone();
         tp.execute(move || {
-            //eprintln!{"request from {:?}", stream.peer_addr()}
-            // TODO loop until stream closed
             while handle_connection(&stream, &mapping, &mime) . is_ok() {
-                
+                if stop_two.load(Ordering::SeqCst) { break }
             }
         });
+        //println!{"Checking Stop"}
         if stop.load(Ordering::SeqCst) { break }
     }
     println!{"Stopping the server..."}
@@ -142,9 +145,9 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
     let protocol = parts.next().unwrap();
     let query = match path.find('?') {
         Some(qp) => {
-            let temp = &path[qp+1..].to_string();
+            let query = &path[qp+1..].to_string();
             path = path[0..qp].to_string();
-            temp.clone()
+            query.to_owned()
         }
         None => "".to_string()
     };
