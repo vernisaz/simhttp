@@ -120,13 +120,25 @@ fn main() {
         });
 
     for stream in listener.incoming() {
-        let stream = stream.unwrap();
+        let mut stream = stream.unwrap();
         let mapping = Arc::clone(&mapping);
         let mime = Arc::clone(&mime);
         let stop_two = stop.clone();
         tp.execute(move || {
-            while handle_connection(&stream, &mapping, &mime) . is_ok() {
-                if stop_two.load(Ordering::SeqCst) { break }
+            loop {
+                match handle_connection(&stream, &mapping, &mime)  {
+                     Err(err) => { eprintln!{"err:{err}"} 
+                         // can do it only if response isn't commited
+                         let contents = include_str!{"404.html"}; // 501
+                         let contents = contents.as_bytes();
+                         let length = contents.len();
+                         let c_type = "text/html";
+                         if stream.write_all(format!("HTTP/1.1 501 INTERNAL SERVER ERROR\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\n\r\n").as_bytes()).is_ok() {
+                            if stream.write_all(&contents).is_err() { break }
+                        }
+                     }
+                     _ => if stop_two.load(Ordering::SeqCst) { break }
+                }
             }
         });
         //println!{"Checking Stop"}
@@ -297,8 +309,13 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
         
         if method == "GET" || method == "POST" {
            // eprintln!{"servicing {method} to {path_translated:?}"}
-             if cgi {
+             let path_translated2 = PathBuf::from(&path_translated.clone().unwrap());
+             if cgi && path_translated2.is_file() {
                 let path_translated = PathBuf::from(&path_translated.unwrap());
+                let mut path_translated = path_translated.as_path().canonicalize().unwrap();
+                if !path_translated.is_absolute() {
+                     path_translated = env::current_dir()?.join(path_translated)
+                }
                 let mut load = Command::new(&path_translated)
                  .stdout(Stdio::piped())
                  .stdin(Stdio::piped())
