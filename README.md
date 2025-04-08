@@ -18,4 +18,4 @@ One JSON file is used for configuring the server. The file has to be in the same
 Just execute its executable file.
 
 ## Status
-Currently the server in an active development. However is seems already fully functional, so you can try it.
+Currently the server is in an active development. However it seems already fully functional, so you can try it.

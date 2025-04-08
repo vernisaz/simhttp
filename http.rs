@@ -15,6 +15,7 @@ use std::{
 };
 use simtpool::ThreadPool;
 use simjson::JsonData::{Num,Text,Data,Arr,Bool,self};
+mod log;
 
 struct Mapping {
     web_path: String,
@@ -28,6 +29,8 @@ struct CgiOut {
 }
 
 fn main() {
+    let mut log_out = std::io::stdout();
+    let mut logger = log::SimLogger::new(log::Level::All, &mut log_out);
     let Ok(env) = fs::read_to_string("env.conf") else {
         eprintln!{"No env file in the current directory"}
         return
@@ -97,7 +100,7 @@ fn main() {
     let stop = Arc::new(AtomicBool::new(false));
     let stop_one = stop.clone();
     let mapping = Arc::new(read_mapping(mapping));
-    
+    logger.log(log::Level::Info, &format!{"Server started at {bind}:{port}"});
     thread::spawn(move || {
             let mut input = String::new();
             loop {
@@ -110,7 +113,7 @@ fn main() {
                 input.clear()
             }
         });
-    
+
     for stream in listener.incoming() {
         let stream = stream.unwrap();
         let mapping = Arc::clone(&mapping);
