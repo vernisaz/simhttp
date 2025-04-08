@@ -27,10 +27,15 @@ struct CgiOut {
     load: Vec<u8>,
     pos: usize,
 }
+//static GLOBAL_MAMI: OnceLock<HashMap<String, String>> = OnceLock::new();
 
 fn main() {
     let mut log_out = std::io::stdout();
     let mut logger = log::SimLogger::new(log::Level::All, &mut log_out);
+    //let logger = Arc::new(Mutex::new(logger));
+    //let logger_clone = Arc::clone(&logger);
+    //let mut logger = logger_clone.lock().unwrap();
+    //logger.log(log::Level::Info, &format!{"Server started at {bind}:{port}"});
     let Ok(env) = fs::read_to_string("env.conf") else {
         eprintln!{"No env file in the current directory"}
         return
@@ -61,7 +66,7 @@ fn main() {
         return
     };
     let Num(port) = port else {
-        eprintln!{"No a number port number configured"}
+        eprintln!{"Not a number port number configured"}
         return
     };
     
@@ -180,6 +185,8 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
                 if path.chars().rev().nth(0) == Some('/') {
                     path += "index.html"
                 }
+                // TODO analyze if path traversal is possible
+                //let mut path_buf =  PathBuf::from(&e.path); path_buf.join( PathBuf::from(&path[e.web_path.len()..]));
                 path_translated = Some(rslash::adjust_separator(e.path.clone() + MAIN_SEPARATOR_STR + &path[e.web_path.len()..]));
                 //eprintln!{"mapping found as {path_translated:?}"}
             }
