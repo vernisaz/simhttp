@@ -6,7 +6,7 @@ use std::{
     io::{prelude::*, Error, ErrorKind, BufReader, self},
     net::{TcpListener, TcpStream,ToSocketAddrs},
     thread,
-    sync::{atomic::{AtomicBool,Ordering}, Arc},
+    sync::{atomic::{AtomicBool,Ordering}, Arc,Mutex},
     path::{MAIN_SEPARATOR_STR,PathBuf},
     collections::HashMap,
     process::{Stdio,Command},
@@ -30,10 +30,10 @@ struct CgiOut {
 //static GLOBAL_MAMI: OnceLock<HashMap<String, String>> = OnceLock::new();
 
 fn main() {
-    let mut log_out = std::io::stdout();
+    let mut log_out = log::LogFile::new();//std::io::stdout();
     let mut logger = log::SimLogger::new(log::Level::All, &mut log_out);
-    //let logger = Arc::new(Mutex::new(logger));
-    //let logger_clone = Arc::clone(&logger);
+    let logger = Arc::new(Mutex::new(logger));
+    let logger_clone = Arc::clone(&logger);
     //let mut logger = logger_clone.lock().unwrap();
     //logger.log(log::Level::Info, &format!{"Server started at {bind}:{port}"});
     let Ok(env) = fs::read_to_string("env.conf") else {
@@ -105,7 +105,7 @@ fn main() {
     let stop = Arc::new(AtomicBool::new(false));
     let stop_one = stop.clone();
     let mapping = Arc::new(read_mapping(mapping));
-    logger.log(log::Level::Info, &format!{"Server started at {bind}:{port}"});
+    logger_clone.lock().unwrap().info(&format!{"Server started at {bind}:{port}"});
     thread::spawn(move || {
             let mut input = String::new();
             loop {
@@ -124,6 +124,7 @@ fn main() {
         let mapping = Arc::clone(&mapping);
         let mime = Arc::clone(&mime);
         let stop_two = stop.clone();
+        let logger = Arc::clone(&logger);
         tp.execute(move || {
             loop {
                 match handle_connection(&stream, &mapping, &mime)  {
@@ -144,7 +145,7 @@ fn main() {
         //println!{"Checking Stop"}
         if stop.load(Ordering::SeqCst) { break }
     }
-    println!{"Stopping the server..."}
+    logger_clone.lock().unwrap().info("Stopping the server...");
     drop(tp)
 }
 
@@ -451,6 +452,8 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
                     stream.write_all(response.as_bytes())?;
                     stream.write_all(&contents)?;
                     // log
+                    //logger.lock().unwrap().info(format!{"{} -- [{:>10}] \"{request_line}\" 404 {length}", stream.peer_addr().unwrap().to_string(),
+                    //    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()})
                     println!{"{} -- [{:>10}] \"{request_line}\" 404 {length}", stream.peer_addr().unwrap().to_string(),
                         SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()}
                 }

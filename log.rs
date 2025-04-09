@@ -1,3 +1,10 @@
+use std::{
+    fs::{self,File},
+    time::{SystemTime,UNIX_EPOCH},
+    path::{MAIN_SEPARATOR_STR,PathBuf},
+    sync::Arc,
+};
+use io;
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum Level {
@@ -11,29 +18,59 @@ pub enum Level {
 pub struct SimLogger<'a> {
     level: Level,
     output: Box<dyn std::io::Write + 'a>,
+}
+
+pub struct LogFile {
     currnet_line: u32,
     current_chunk: u32,
     created: u64,
-}
-
-impl From<u8> for Level {
-    fn from(value: u8) -> Self {
-        match value {
-            0 => Level::All,
-            1 => Level::Warning,
-            2 => Level::Info,
-            _ => Level::Silent,
-        }
-    }
+    file: File,
 }
 
 impl <'a>SimLogger<'a> {
     pub fn new(level: Level, output: &'a mut dyn std::io::Write) -> Self {
-        Self { level, output: Box::new(output),created:0, current_chunk:0,currnet_line:0 }
+        Self { level, output: Box::new(output) }
     }
     pub fn log(&mut self, level: Level, message: &str) {
         if self.level.clone() as u32 <= level as u32 {
             writeln!(self.output, "{}", message).unwrap();
         }
+    }
+    pub fn info(&mut self, message: &str) {
+        self.log(Level::Info, message)
+    }
+    pub fn warning(&mut self, message: &str) {
+        self.log(Level::Warning, message)
+    }
+}
+
+impl LogFile {
+    pub fn new() -> Self {
+        let created = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+        let name = format!{"simhttp-{}", created};
+        let mut path = PathBuf::from(".");
+        path.set_file_name(&name);
+        path.set_extension("log");
+        let file = File::create(path).expect("can't create log");
+    
+        LogFile { currnet_line: 0,
+        current_chunk: 0,
+        created: created,
+        file: file,
+        }
+    }
+}
+impl std::io::Write for LogFile {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if buf[buf.len()-1] == b'\n' { // add count of all \n in the string
+            self.currnet_line += 1
+        }
+        self.file.write_all(buf)?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        // In this simple example, flush does nothing.
+        Ok(())
     }
 }
