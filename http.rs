@@ -7,7 +7,7 @@ use std::{
     net::{TcpListener, TcpStream,ToSocketAddrs},
     thread,
     sync::{atomic::{AtomicBool,Ordering}, Arc},
-    path::{Path,MAIN_SEPARATOR_STR,PathBuf},
+    path::{MAIN_SEPARATOR_STR,PathBuf},
     collections::HashMap,
     process::{Stdio,Command},
     time::{SystemTime,UNIX_EPOCH},
@@ -219,7 +219,7 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
         env.insert("REMOTE_HOST".to_string(), stream.peer_addr().unwrap().to_socket_addrs().unwrap().next().unwrap().to_string());
         env.insert("REQUEST_METHOD".to_string(), method.to_string());
         env.insert("SERVER_PROTOCOL".to_string(), protocol.to_string());
-        env.insert("SERVER_SOFTWARE".to_string(), "SimHTTP/1.01".to_string());
+        env.insert("SERVER_SOFTWARE".to_string(), "SimHTTP/1.01b15".to_string());
         if let Some(ref path_info) = path_info {
              env.insert("PATH_INFO".to_string(), path_info.into());
         }
@@ -309,147 +309,154 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
         
         if method == "GET" || method == "POST" {
            // eprintln!{"servicing {method} to {path_translated:?}"}
-             let path_translated2 = PathBuf::from(&path_translated.clone().unwrap());
-             if cgi && path_translated2.is_file() {
-                let path_translated = PathBuf::from(&path_translated.unwrap());
-                let mut path_translated = path_translated.as_path().canonicalize().unwrap();
-                if !path_translated.is_absolute() {
-                     path_translated = env::current_dir()?.join(path_translated)
-                }
-                let mut load = Command::new(&path_translated)
-                 .stdout(Stdio::piped())
-                 .stdin(Stdio::piped())
-                 .stderr(Stdio::inherit())
-                 .current_dir(&path_translated.parent().unwrap())
-                 .env_clear()
-                .envs(cgi_env.unwrap()).spawn()?;
-                
-                let mut stdin = load.stdin.take().expect("Failed to open stdin");
-                thread::spawn(move || {
-                    if let Some(extra) = extra {
-                        stdin.write_all(&extra).expect("Failed to write to stdin");
-                        //eprintln!{"written: {}", String::from_utf8_lossy( &extra)}
-                    }
-                });
-
-                let output = load.wait_with_output()?;
-               // println!{"load {}", String::from_utf8_lossy( &output.stdout)}
-                let mut output = CgiOut{load:output.stdout, pos:0};
-                let mut code_num = 200;
-                let status = output.next();
-                if status.is_none() { // no headers
-                    let len = output.rest_len() ;
-                    stream.write_all(format!{"{protocol} 200 OK\r\nContent-Length: {len}\r\n\r\n"}.as_bytes()).unwrap();
-                    if len > 0 {
-                        stream.write_all(&output.rest()).unwrap()
-                    }
-                } else {
-                    let status = status.unwrap();
-                    let mut headers = String::new();
-                    let mut status =
-                    if status.find(':') . is_some() {
-                        if let Some((key,val)) = status.split_once(": ") {
-                            let key = key.to_lowercase();
-                            if key != "content-length" {
-                                headers.push_str(&format!{"{status}\r\n"});
-                            } else {
-                                
-                            }
-                            if key == "location" {
-                                code_num = 302;
-                                format!{"{protocol} 302 Found\r\n"}
-                            } else if key == "status" {
-                                if let Some((code, _)) = val.split_once(" ") {
-                                    code_num = code.parse::<u16>().unwrap();
-                                }
-                                format!{"{protocol} {val}\r\n"}
-                            } else {
-                                format!{"{protocol} 200 OK\r\n"}
-                            }
-                        } else { // never
-                            format!{"{protocol} 200 OK\r\n"}
+            match path_translated {
+                Some(ref path_translated) if PathBuf::from(&path_translated).is_file() => {
+                    let path_translated = PathBuf::from(&path_translated);
+                    if cgi {
+                        let mut path_translated = path_translated.as_path().canonicalize().unwrap();
+                        if !path_translated.is_absolute() {
+                             path_translated = env::current_dir()?.join(path_translated)
                         }
-                    } else {
-                        let (code, msg) = 
-                        match status.split_once(' ') {
-                            Some((code,msg)) => (code.to_string(),msg.to_string()),
-                            None => {
-                                match status.as_str() {
-                                    "200" => ("200".to_string(),"OK".to_string()),
-                                    _ => (status.clone(),format!{"ERROR {status}"})
-                                }
-                            }
-                        };
-                        code_num = code.parse::<u16>().unwrap();
-                        format!{"{protocol} {code} {msg}\r\n"}
-                    };
-                    
-                    while let Some(header)  = output.next() {
-                        if let Some((key,val)) = header.split_once(": ") {
-                            let key = key.to_lowercase();
-                            if key == "location" {
-                                code_num = 302;
-                                status = format!{"{protocol} 302 Found\r\n"}
-                            } else if key == "status" {
-                                if let Some((code, _)) = val.split_once(" ") {
-                                    code_num = code.parse::<u16>().unwrap();
-                                    status = format!{"{protocol} {val}\r\n"}
-                                }
-                            }
-                            if key != "content-length" {
-                                headers.push_str(&format!{"{header}\r\n"})
-                            } else {
-                                
-                            }
-                        }
+                        let mut load = Command::new(&path_translated)
+                         .stdout(Stdio::piped())
+                         .stdin(Stdio::piped())
+                         .stderr(Stdio::inherit())
+                         .current_dir(&path_translated.parent().unwrap())
+                         .env_clear()
+                        .envs(cgi_env.unwrap()).spawn()?;
                         
-                    }
-                    stream.write_all(status.as_bytes())?;
-                    stream.write_all(headers.as_bytes())?;
-                    let len = output.rest_len() ; // why not content-length ?
-                    //eprintln!{"{status}\n{headers}Content-Length: {len}\r\n\r\n"}
-                    stream.write_all(format!{"Content-Length: {len}\r\n\r\n"}.as_bytes())?;
-                    if len > 0 {
-                        stream.write_all(&output.rest())?;
-                        //eprintln!{"{:?}", String::from_utf8_lossy(&output.rest())}
+                        let mut stdin = load.stdin.take().expect("Failed to open stdin");
+                        thread::spawn(move || {
+                            if let Some(extra) = extra {
+                                stdin.write_all(&extra).expect("Failed to write to stdin");
+                                //eprintln!{"written: {}", String::from_utf8_lossy( &extra)}
+                            }
+                        });
+        
+                        let output = load.wait_with_output()?;
+                       // println!{"load {}", String::from_utf8_lossy( &output.stdout)}
+                        let mut output = CgiOut{load:output.stdout, pos:0};
+                        let mut code_num = 200;
+                        let status = output.next();
+                        if status.is_none() { // no headers
+                            let len = output.rest_len() ;
+                            stream.write_all(format!{"{protocol} 200 OK\r\nContent-Length: {len}\r\n\r\n"}.as_bytes()).unwrap();
+                            if len > 0 {
+                                stream.write_all(&output.rest()).unwrap()
+                            }
+                        } else {
+                            let status = status.unwrap();
+                            let mut headers = String::new();
+                            let mut status =
+                            if status.find(':') . is_some() {
+                                if let Some((key,val)) = status.split_once(": ") {
+                                    let key = key.to_lowercase();
+                                    if key != "content-length" {
+                                        headers.push_str(&format!{"{status}\r\n"});
+                                    } else {
+                                        
+                                    }
+                                    if key == "location" {
+                                        code_num = 302;
+                                        format!{"{protocol} 302 Found\r\n"}
+                                    } else if key == "status" {
+                                        if let Some((code, _)) = val.split_once(" ") {
+                                            code_num = code.parse::<u16>().unwrap();
+                                        }
+                                        format!{"{protocol} {val}\r\n"}
+                                    } else {
+                                        format!{"{protocol} 200 OK\r\n"}
+                                    }
+                                } else { // never
+                                    format!{"{protocol} 200 OK\r\n"}
+                                }
+                            } else {
+                                let (code, msg) = 
+                                match status.split_once(' ') {
+                                    Some((code,msg)) => (code.to_string(),msg.to_string()),
+                                    None => {
+                                        match status.as_str() {
+                                            "200" => ("200".to_string(),"OK".to_string()),
+                                            _ => (status.clone(),format!{"ERROR {status}"})
+                                        }
+                                    }
+                                };
+                                code_num = code.parse::<u16>().unwrap();
+                                format!{"{protocol} {code} {msg}\r\n"}
+                            };
+                            
+                            while let Some(header)  = output.next() {
+                                if let Some((key,val)) = header.split_once(": ") {
+                                    let key = key.to_lowercase();
+                                    if key == "location" {
+                                        code_num = 302;
+                                        status = format!{"{protocol} 302 Found\r\n"}
+                                    } else if key == "status" {
+                                        if let Some((code, _)) = val.split_once(" ") {
+                                            code_num = code.parse::<u16>().unwrap();
+                                            status = format!{"{protocol} {val}\r\n"}
+                                        }
+                                    }
+                                    if key != "content-length" {
+                                        headers.push_str(&format!{"{header}\r\n"})
+                                    } else {
+                                        
+                                    }
+                                }
+                                
+                            }
+                            stream.write_all(status.as_bytes())?;
+                            stream.write_all(headers.as_bytes())?;
+                            let len = output.rest_len() ; // why not content-length ?
+                            //eprintln!{"{status}\n{headers}Content-Length: {len}\r\n\r\n"}
+                            stream.write_all(format!{"Content-Length: {len}\r\n\r\n"}.as_bytes())?;
+                            if len > 0 {
+                                stream.write_all(&output.rest())?;
+                                //eprintln!{"{:?}", String::from_utf8_lossy(&output.rest())}
+                            }
+                        }
+                        println!{"{} -- [{:>10}] \"{request_line}\" {code_num} {}", stream.peer_addr().unwrap().to_string(),
+                           SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis(), output.rest_len()}
+                    } else {
+                        let mut f = File::open(&path_translated)?;
+                        let mut buffer = Vec::new();
+                        let c_type =
+                        if let Some(ref ext) = path_translated. extension() {
+                            mime.get(ext.to_str().unwrap())
+                        } else {None};
+                        // read the whole file
+                        f.read_to_end(&mut buffer)?;
+                        let c_type = if c_type.is_none() {
+                            "octet-stream"
+                        } else { c_type.unwrap() };
+                        let length = buffer.len();
+                        let response =
+                            format!("{protocol} 200 OK\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\n\r\n");
+                    
+                        stream.write_all(response.as_bytes())?;
+                        stream.write_all(&buffer)?;
+                        // log
+                        println!{"{} -- [{:>10}] \"{request_line}\" 200 {length}", stream.peer_addr().unwrap().to_string(),
+                            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()}
                     }
                 }
-                println!{"{} -- [{:>10}] \"{request_line}\" {code_num} {}", stream.peer_addr().unwrap().to_string(),
-                   SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis(), output.rest_len()}
-            } else {
-                let (status_line,code,length,c_type,contents) =
-                if path_translated.is_none() || !Path::new(&path_translated.as_ref().unwrap()).is_file() {
+                _ => {
                     let contents = include_str!{"404.html"};
                     let contents = contents.as_bytes();
                     let length = contents.len();
                     let c_type = "text/html";
-                    (format!{"{protocol} 404 NOT FOUND"}, 404, length, c_type, contents.to_vec())
-                } else {
-                    let path_translated = path_translated.unwrap();
-                    let mut f = File::open(&path_translated)?;
-                    let mut buffer = Vec::new();
-                    let c_type =
-                    if let Some(pos) = path_translated.rfind('.') {
-                        mime.get(&path_translated[pos+1..])
-                    } else {None};
-                    // read the whole file
-                    f.read_to_end(&mut buffer)?;
-                    let c_type = if c_type.is_none() {
-                        "octet-stream"
-                    } else { c_type.unwrap() };
-                    let length = buffer.len();
-                    (format!{"{protocol} 200 OK"}, 200, length, c_type, buffer)
-                };
+                    let response =
+                        format!("{protocol} 404 NOT FOUND\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\n\r\n");
             
-                let response =
-                    format!("{status_line}\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\n\r\n");
-            
-                stream.write_all(response.as_bytes())?;
-                stream.write_all(&contents)?;
-                // log
-                println!{"{} -- [{:>10}] \"{request_line}\" {code} {length}", stream.peer_addr().unwrap().to_string(),
-                    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()}
+                    stream.write_all(response.as_bytes())?;
+                    stream.write_all(&contents)?;
+                    // log
+                    println!{"{} -- [{:>10}] \"{request_line}\" 404 {length}", stream.peer_addr().unwrap().to_string(),
+                        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()}
+                }
             }
+        } else {
+            // unsupported method
         }
     Ok(())
 }
