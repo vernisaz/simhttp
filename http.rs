@@ -127,16 +127,16 @@ fn main() {
         tp.execute(move || {
             loop {
                 match handle_connection(&stream, &mapping, &mime, &logger_clone2)  {
-                     Err(err) if err.kind() != ErrorKind::BrokenPipe => { eprintln!{"err:{err}"} 
+                     Err(err) => if err.kind() != ErrorKind::BrokenPipe { eprintln!{"err:{err}"} 
                          // can do it only if response isn't commited
                          let contents = include_str!{"404.html"}; // 501
                          let contents = contents.as_bytes();
                          let length = contents.len();
                          let c_type = "text/html";
-                         if stream.write_all(format!("HTTP/1.1 501 INTERNAL SERVER ERROR\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\n\r\n").as_bytes()).is_ok() {
+                        if stream.write_all(format!("HTTP/1.1 501 INTERNAL SERVER ERROR\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\n\r\n").as_bytes()).is_ok() {
                             if stream.write_all(&contents).is_err() { break }
-                        }
-                     }
+                        } else {break}
+                     } else { break}
                      _ => if stop_two.load(Ordering::SeqCst) { break }
                 }
             }
