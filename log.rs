@@ -1,8 +1,8 @@
 use std::{
     fs::{self,File},
     time::{SystemTime,UNIX_EPOCH},
-    path::{MAIN_SEPARATOR_STR,PathBuf},
-    sync::Arc,
+    path::{/*MAIN_SEPARATOR_STR,*/PathBuf},
+    sync::{Mutex,Arc},
 };
 use io;
 
@@ -17,7 +17,7 @@ pub enum Level {
 
 pub struct SimLogger<'a> {
     level: Level,
-    output: Box<dyn std::io::Write + 'a>,
+    output: Mutex<Box<dyn std::io::Write + Sync + Send + 'a>>,
 }
 
 pub struct LogFile {
@@ -28,12 +28,12 @@ pub struct LogFile {
 }
 
 impl <'a>SimLogger<'a> {
-    pub fn new(level: Level, output: &'a mut dyn std::io::Write) -> Self {
-        Self { level, output: Box::new(output) }
+    pub fn new(level: Level, output: impl std::io::Write + Sync + Send +'static) -> Self {
+        Self { level, output: Mutex::new(Box::new(output)) }
     }
     pub fn log(&mut self, level: Level, message: &str) {
         if self.level.clone() as u32 <= level as u32 {
-            writeln!(self.output, "{}", message).unwrap();
+            writeln!(self.output.lock().unwrap(), "{}", message).unwrap();
         }
     }
     pub fn info(&mut self, message: &str) {
