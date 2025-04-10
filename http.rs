@@ -125,10 +125,9 @@ fn main() {
         let stop_two = stop.clone();
         let logger_clone2 = Arc::clone(&logger);
         tp.execute(move || {
-            //logger_clone2.lock().unwrap().info(&format!{"Servicing connection"});
             loop {
                 match handle_connection(&stream, &mapping, &mime, &logger_clone2)  {
-                     Err(err) => { eprintln!{"err:{err}"} 
+                     Err(err) if err.kind() != ErrorKind::BrokenPipe => { eprintln!{"err:{err}"} 
                          // can do it only if response isn't commited
                          let contents = include_str!{"404.html"}; // 501
                          let contents = contents.as_bytes();
@@ -142,7 +141,6 @@ fn main() {
                 }
             }
         });
-        //println!{"Checking Stop"}
         if stop.load(Ordering::SeqCst) { break }
     }
     println!("Stopping the server...");
@@ -155,8 +153,9 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
     //let lines = buf_reader.lines(); // may still work
     let len = buf_reader.read_line(&mut line)?;
     if len < 10 { // http/1.x ...
-        eprintln!{"bad request"}
-        return Err(Error::new(ErrorKind::Other, "no data"))
+        if len > 0 {
+            eprintln!{"bad request {line}"}}
+        return Err(Error::new(ErrorKind::BrokenPipe, "no data"))
     }
     line.truncate(len-2); // \r\n
     let request_line = line.clone();
