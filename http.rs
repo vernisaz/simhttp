@@ -548,8 +548,20 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
                         SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()})
                 }
             }
-        } else { // PUT DELETE HEAD
+        } else { // PUT DELETE HEAD TRACE OPTIONS PATCH CONNECT
             // unsupported method
+            let contents = include_str!{"404.html"}; // 405
+            let contents = contents.as_bytes();
+            let length = contents.len();
+            let c_type = "text/html";
+            let response =
+                format!("{protocol} 405 Method Not Allowed\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\n\r\n");
+    
+            stream.write_all(response.as_bytes())?;
+            stream.write_all(&contents)?;
+            // log
+            logger.lock().unwrap().info(&format!{"{} -- [{:>10}] \"{request_line}\" 405 {length}", stream.peer_addr().unwrap().to_string(),
+                SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()})
         }
     Ok(())
 }
