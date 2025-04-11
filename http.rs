@@ -343,7 +343,7 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
                         .envs(cgi_env.unwrap()).spawn()?;
                         if let Some(extra) = extra {
                             if let Some(mut stdin) = load.stdin.take() {
-                                thread::spawn(move || {
+                                thread::spawn(move || { // TODO consider using a separate thread pool
                                         match stdin.write_all(&extra) {
                                             Err(err) => eprintln!{"can't write to SGI script: {err}"},
                                             _=> () //eprintln!{"written: {}", String::from_utf8_lossy( &extra)}
@@ -377,20 +377,103 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
                                         format!{"{protocol} 302 Found\r\n"}
                                     } else if key == "status" {
                                         if let Some((code, _)) = val.split_once(" ") {
-                                            code_num = code.parse::<u16>().unwrap();
+                                            code_num = code.parse::<u16>().unwrap_or(200);
+                                            format!{"{protocol} {val}\r\n"}
+                                        } else {
+                                            code_num = val.parse::<u16>().unwrap_or(200);
+                                            let msg = match code_num {
+                                                100 => "Continue",
+                                                101 => "Switching Protocols",
+                                                102 => "Processing",
+                                                103 => "Early Hints",
+                                                200 => "OK",
+                                                201 => "Created",
+                                                204 => "No Content",
+                                                301 => "Moved Permanently",
+                                                302 => "Found",
+                                                400 => "Bad Request",
+                                                401 => "Unauthorized",
+                                                403 => "Forbidden",
+                                                404 => "Not Found",
+                                                405 => "Method Not Allowed",
+                                                500 => "Internal Server Error",
+                                                502 => "Bad Gateway",
+                                                503 => "Service Unavailable",
+                                                _ => &format!{"ERROR {val}"}
+                                            };
+                                            format!{"{protocol} {val} {msg}\r\n"}
                                         }
-                                        format!{"{protocol} {val}\r\n"}
                                     } else {
                                         format!{"{protocol} 200 OK\r\n"}
                                     }
                                 } else {
                                     let (code, msg) = 
                                     match status.split_once(' ') {
-                                        Some((code,msg)) => (code.to_string(),msg.to_string()),
+                                        Some((code,msg)) => (code,msg),
                                         None => {
                                             match status.as_str() {
-                                                "200" => ("200".to_string(),"OK".to_string()),
-                                                _ => (status.clone(),format!{"ERROR {status}"})
+                                                code @ "100" => (code, "Continue"),
+                                                code @ "101" => (code, "Switching Protocols"),
+                                                code @ "102" => (code, "Processing"),
+                                                code @ "103" => (code, "Early Hints"),
+                                                code @ "200" => (code, "OK"),
+                                                code @ "201" => (code, "Created"),
+                                                code @ "202" => (code, "Accepted"),
+                                                code @ "203" => (code, "Non-Authoritative Information"),
+                                                code @ "204" => (code, "No Content"),
+                                                code @ "205" => (code, "Reset Content"),
+                                                code @ "206" => (code, "Partial Content"),
+                                                code @ "207" => (code, "Multi-Status"),
+                                                code @ "208" => (code, "Already Reported"),
+                                                code @ "226" => (code, "IM Used"),
+                                                code @ "300" => (code, "Multiple Choices"),
+                                                code @ "301" => (code, "Moved Permanently"),
+                                                code @ "302" => (code, "Found"),
+                                                code @ "303" => (code, "See Other"),
+                                                code @ "304" => (code, "Not Modified"),
+                                                code @ "307" => (code, "Temporary Redirect"),
+                                                code @ "308" => (code, "Permanent Redirect"),
+                                                code @ "400" => (code, "Bad Request"),
+                                                code @ "401" => (code, "Unauthorized"),
+                                                code @ "402" => (code, "Payment Required"),
+                                                code @ "403" => (code, "Forbidden"),
+                                                code @ "404" => (code, "Not Found"),
+                                                code @ "405" => (code, "Method Not Allowed"),
+                                                code @ "406" => (code, "Not Acceptable"),
+                                                code @ "407" => (code, "Proxy Authentication Required"),
+                                                code @ "408" => (code, "Request Timeout"),
+                                                code @ "409" => (code, "Conflict"),
+                                                code @ "410" => (code, "Gone"),
+                                                code @ "411" => (code, "Length Required"),
+                                                code @ "412" => (code, "Precondition Failed"),
+                                                code @ "413" => (code, "Content Too Large"),
+                                                code @ "414" => (code, "URI Too Long"),
+                                                code @ "415" => (code, "Unsupported Media Type"),
+                                                code @ "416" => (code, "Range Not Satisfiable"),
+                                                code @ "417" => (code, "Expectation Failed"),
+                                                code @ "418" => (code, "I'm a teapot"),
+                                                code @ "421" => (code, "Misdirected Request"),
+                                                code @ "422" => (code, "Unprocessable Content"),
+                                                code @ "423" => (code, "Locked"),
+                                                code @ "424" => (code, "Failed Dependency"),
+                                                code @ "425" => (code, "Too Early"),
+                                                code @ "426" => (code, "Upgrade Required"),
+                                                code @ "428" => (code, "Precondition Required"),
+                                                code @ "429" => (code, "Too Many Requests"),
+                                                code @ "431" => (code, "Request Header Fields Too Large"),
+                                                code @ "451" => (code, "Unavailable For Legal Reasons"),
+                                                code @ "500" => (code, "Internal Server Error"),
+                                                code @ "501" => (code, "Not Implemented"),
+                                                code @ "502" => (code, "Bad Gateway"),
+                                                code @ "503" => (code, "Service Unavailable"),
+                                                code @ "504" => (code, "Gateway Timeout"),
+                                                code @ "505" => (code, "HTTP Version Not Supported"),
+                                                code @ "506" => (code, "Variant Also Negotiates"),
+                                                code @ "507" => (code, "Insufficient Storage"),
+                                                code @ "508" => (code, "Loop Detected"),
+                                                code @ "510" => (code, "Not Extended"),
+                                                code @ "511" => (code, "Network Authentication Required"),
+                                                code @ _ => (code,"Unknown")
                                             }
                                         }
                                     };
