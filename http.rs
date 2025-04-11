@@ -160,9 +160,9 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
     line.truncate(len-2); // \r\n
     let request_line = line.clone();
     let mut parts  = request_line.splitn(3, ' '); // split_whitespace
-    let method = parts.next().unwrap();
-    let mut path = parts.next().unwrap().to_string();
-    let protocol = parts.next().unwrap();
+    let method = parts.next().ok_or(io::Error::new(ErrorKind::Other, "Invalid request"))?; // can't be due len check
+    let mut path = parts.next().ok_or(io::Error::new(ErrorKind::Other, "Invalid request - no path"))?.to_string();
+    let protocol = parts.next().ok_or(io::Error::new(ErrorKind::Other, "Invalid request - no protocol"))?;
     let query = match path.find('?') {
         Some(qp) => {
             let query = &path[qp+1..].to_string();
@@ -215,11 +215,15 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
          ).collect();
         env.insert("GATEWAY_INTERFACE".to_string(), "CGI/1.1".to_string());
         env.insert("QUERY_STRING".to_string(), query);
-        env.insert("REMOTE_ADDR".to_string(), stream.peer_addr().unwrap().to_string()); // TODO add handling of an error
-        env.insert("REMOTE_HOST".to_string(), stream.peer_addr().unwrap().to_socket_addrs().unwrap().next().unwrap().to_string());
+        if let Ok(peer_addr) = stream.peer_addr() {
+            env.insert("REMOTE_ADDR".to_string(), peer_addr.to_string()); 
+            if let Ok(mut remote_host) = peer_addr.to_socket_addrs() {
+                env.insert("REMOTE_HOST".to_string(), remote_host.next().unwrap().to_string());
+            }
+        } 
         env.insert("REQUEST_METHOD".to_string(), method.to_string());
         env.insert("SERVER_PROTOCOL".to_string(), protocol.to_string());
-        env.insert("SERVER_SOFTWARE".to_string(), "SimHTTP/1.01b15".to_string());
+        env.insert("SERVER_SOFTWARE".to_string(), "SimHTTP/1.01b17".to_string());
         if let Some(ref path_info) = path_info {
              env.insert("PATH_INFO".to_string(), path_info.into());
         }
@@ -231,7 +235,22 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
                  path_translated = env::current_dir()?.join(path_translated)
             }
             let path_translated = if let Some(ref path_info) = path_info {
-                rslash::adjust_separator(path_translated.to_str().unwrap().to_string() + &path_info)
+                // sanitize path_info
+                let path_info_parts = path_info.split('/');
+                let mut sanitized_parts = Vec::new();
+                for part in path_info_parts {
+                    match part {
+                        ".." => {
+                            if !sanitized_parts.is_empty() {
+                                sanitized_parts.pop();
+                            }
+                        }
+                        "." => (),
+                        some => sanitized_parts.push(some)
+                    }
+                }
+                
+                rslash::adjust_separator(path_translated.to_str().unwrap().to_string() + &sanitized_parts.join(MAIN_SEPARATOR_STR))
             } else {
                 path_translated.to_str().unwrap().to_string()
             };
