@@ -223,7 +223,7 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
         } 
         env.insert("REQUEST_METHOD".to_string(), method.to_string());
         env.insert("SERVER_PROTOCOL".to_string(), protocol.to_string());
-        env.insert("SERVER_SOFTWARE".to_string(), "SimHTTP/1.01b17".to_string());
+        env.insert("SERVER_SOFTWARE".to_string(), "SimHTTP/1.01b19".to_string());
         if let Some(ref path_info) = path_info {
              env.insert("PATH_INFO".to_string(), path_info.into());
         }
@@ -249,7 +249,6 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
                         some => sanitized_parts.push(some)
                     }
                 }
-                
                 rslash::adjust_separator(path_translated.to_str().unwrap().to_string() + &sanitized_parts.join(MAIN_SEPARATOR_STR))
             } else {
                 path_translated.to_str().unwrap().to_string()
@@ -292,9 +291,8 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
             line.clear()
         }
         if !env.contains_key("CONTENT_TYPE") {
-            env.insert("CONTENT_TYPE".to_string(), "text/html".to_string());
+            env.insert("CONTENT_TYPE".to_string(), "text/plain".to_string());
         }
-        // application/x-www-form-urlencoded
         if content_len > 0 {
             let mut buffer = vec![0u8; content_len as usize];
              buf_reader.read_exact(&mut buffer)?;
@@ -311,7 +309,7 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
                 let key = key.as_str();
                 match key {
                     "content-length" => {  
-                        content_len = val.parse::<u64>().unwrap(); // TODO error hundling
+                        content_len = val.parse::<u64>().unwrap_or(0); 
                     }
                     /*"location" => {
                     }*/
@@ -343,15 +341,16 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
                          .current_dir(&path_translated.parent().unwrap())
                          .env_clear()
                         .envs(cgi_env.unwrap()).spawn()?;
-                        
-                        let mut stdin = load.stdin.take().expect("Failed to open stdin");
-                        thread::spawn(move || {
-                            if let Some(extra) = extra {
-                                stdin.write_all(&extra).expect("Failed to write to stdin");
-                                //eprintln!{"written: {}", String::from_utf8_lossy( &extra)}
+                        if let Some(extra) = extra {
+                            if let Some(mut stdin) = load.stdin.take() {
+                                thread::spawn(move || {
+                                        match stdin.write_all(&extra) {
+                                            Err(err) => eprintln!{"can't write to SGI script: {err}"},
+                                            _=> () //eprintln!{"written: {}", String::from_utf8_lossy( &extra)}
+                                        }
+                                });
                             }
-                        });
-        
+                        }
                         let output = load.wait_with_output()?;
                        // println!{"load {}", String::from_utf8_lossy( &output.stdout)}
                         let mut output = CgiOut{load:output.stdout, pos:0};
@@ -366,14 +365,12 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
                         } else {
                             let status = status.unwrap();
                             let mut headers = String::new();
+                            // first line
                             let mut status =
-                            if status.find(':') . is_some() {
                                 if let Some((key,val)) = status.split_once(": ") {
                                     let key = key.to_lowercase();
-                                    if key != "content-length" {
+                                    if key != "content-length" && key != "status" {
                                         headers.push_str(&format!{"{status}\r\n"});
-                                    } else {
-                                        
                                     }
                                     if key == "location" {
                                         code_num = 302;
@@ -386,23 +383,20 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
                                     } else {
                                         format!{"{protocol} 200 OK\r\n"}
                                     }
-                                } else { // never
-                                    format!{"{protocol} 200 OK\r\n"}
-                                }
-                            } else {
-                                let (code, msg) = 
-                                match status.split_once(' ') {
-                                    Some((code,msg)) => (code.to_string(),msg.to_string()),
-                                    None => {
-                                        match status.as_str() {
-                                            "200" => ("200".to_string(),"OK".to_string()),
-                                            _ => (status.clone(),format!{"ERROR {status}"})
+                                } else {
+                                    let (code, msg) = 
+                                    match status.split_once(' ') {
+                                        Some((code,msg)) => (code.to_string(),msg.to_string()),
+                                        None => {
+                                            match status.as_str() {
+                                                "200" => ("200".to_string(),"OK".to_string()),
+                                                _ => (status.clone(),format!{"ERROR {status}"})
+                                            }
                                         }
-                                    }
+                                    };
+                                    code_num = code.parse::<u16>().unwrap_or(200);
+                                    format!{"{protocol} {code} {msg}\r\n"}
                                 };
-                                code_num = code.parse::<u16>().unwrap();
-                                format!{"{protocol} {code} {msg}\r\n"}
-                            };
                             
                             while let Some(header)  = output.next() {
                                 if let Some((key,val)) = header.split_once(": ") {
@@ -412,17 +406,14 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
                                         status = format!{"{protocol} 302 Found\r\n"}
                                     } else if key == "status" {
                                         if let Some((code, _)) = val.split_once(" ") {
-                                            code_num = code.parse::<u16>().unwrap();
+                                            code_num = code.parse::<u16>().unwrap_or(200);
                                             status = format!{"{protocol} {val}\r\n"}
                                         }
                                     }
-                                    if key != "content-length" {
+                                    if key != "content-length" && key != "status" {
                                         headers.push_str(&format!{"{header}\r\n"})
-                                    } else {
-                                        
-                                    }
+                                    } 
                                 }
-                                
                             }
                             stream.write_all(status.as_bytes())?;
                             stream.write_all(headers.as_bytes())?;
@@ -474,7 +465,7 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
                         SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()})
                 }
             }
-        } else {
+        } else { // PUT DELETE HEAD
             // unsupported method
         }
     Ok(())
