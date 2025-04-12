@@ -28,6 +28,8 @@ struct CgiOut {
     pos: usize,
 }
 
+static ERR404: &str = include_str!{"404.html"};
+
 static LOGGER : LazyLock<Arc<Mutex<log::SimLogger>>> = LazyLock::new(|| Arc::new(Mutex::new(log::SimLogger::new(log::Level::All, log::LogFile::new()))));
 fn main() {
     let logger = &*LOGGER;
@@ -129,11 +131,11 @@ fn main() {
                 match handle_connection(&stream, &mapping, &mime, &logger_clone2)  {
                      Err(err) => if err.kind() != ErrorKind::BrokenPipe { eprintln!{"err:{err}"} 
                          // can do it only if response isn't commited
-                         let contents = include_str!{"404.html"}; // 501
+                         let contents = ERR404; // 500
                          let contents = contents.as_bytes();
                          let length = contents.len();
                          let c_type = "text/html";
-                        if stream.write_all(format!("HTTP/1.1 501 INTERNAL SERVER ERROR\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\n\r\n").as_bytes()).is_ok() {
+                        if stream.write_all(format!("HTTP/1.1 500 INTERNAL SERVER ERROR\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\n\r\n").as_bytes()).is_ok() {
                             if stream.write_all(&contents).is_err() { break }
                         } else {break}
                      } else { break}
@@ -223,7 +225,7 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
         } 
         env.insert("REQUEST_METHOD".to_string(), method.to_string());
         env.insert("SERVER_PROTOCOL".to_string(), protocol.to_string());
-        env.insert("SERVER_SOFTWARE".to_string(), "SimHTTP/1.01b19".to_string());
+        env.insert("SERVER_SOFTWARE".to_string(), "SimHTTP/1.01b20".to_string());
         if let Some(ref path_info) = path_info {
              env.insert("PATH_INFO".to_string(), path_info.into());
         }
@@ -381,26 +383,7 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
                                             format!{"{protocol} {val}\r\n"}
                                         } else {
                                             code_num = val.parse::<u16>().unwrap_or(200);
-                                            let msg = match code_num {
-                                                100 => "Continue",
-                                                101 => "Switching Protocols",
-                                                102 => "Processing",
-                                                103 => "Early Hints",
-                                                200 => "OK",
-                                                201 => "Created",
-                                                204 => "No Content",
-                                                301 => "Moved Permanently",
-                                                302 => "Found",
-                                                400 => "Bad Request",
-                                                401 => "Unauthorized",
-                                                403 => "Forbidden",
-                                                404 => "Not Found",
-                                                405 => "Method Not Allowed",
-                                                500 => "Internal Server Error",
-                                                502 => "Bad Gateway",
-                                                503 => "Service Unavailable",
-                                                _ => &format!{"ERROR {val}"}
-                                            };
+                                            let msg = error_message(code_num);
                                             format!{"{protocol} {val} {msg}\r\n"}
                                         }
                                     } else {
@@ -409,75 +392,15 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
                                 } else {
                                     let (code, msg) = 
                                     match status.split_once(' ') {
-                                        Some((code,msg)) => (code,msg),
+                                        Some((code,msg)) => {
+                                            code_num = code.parse::<u16>().unwrap_or(200);
+                                            (code.to_string(),msg.to_string())
+                                        },
                                         None => {
-                                            match status.as_str() {
-                                                code @ "100" => (code, "Continue"),
-                                                code @ "101" => (code, "Switching Protocols"),
-                                                code @ "102" => (code, "Processing"),
-                                                code @ "103" => (code, "Early Hints"),
-                                                code @ "200" => (code, "OK"),
-                                                code @ "201" => (code, "Created"),
-                                                code @ "202" => (code, "Accepted"),
-                                                code @ "203" => (code, "Non-Authoritative Information"),
-                                                code @ "204" => (code, "No Content"),
-                                                code @ "205" => (code, "Reset Content"),
-                                                code @ "206" => (code, "Partial Content"),
-                                                code @ "207" => (code, "Multi-Status"),
-                                                code @ "208" => (code, "Already Reported"),
-                                                code @ "226" => (code, "IM Used"),
-                                                code @ "300" => (code, "Multiple Choices"),
-                                                code @ "301" => (code, "Moved Permanently"),
-                                                code @ "302" => (code, "Found"),
-                                                code @ "303" => (code, "See Other"),
-                                                code @ "304" => (code, "Not Modified"),
-                                                code @ "307" => (code, "Temporary Redirect"),
-                                                code @ "308" => (code, "Permanent Redirect"),
-                                                code @ "400" => (code, "Bad Request"),
-                                                code @ "401" => (code, "Unauthorized"),
-                                                code @ "402" => (code, "Payment Required"),
-                                                code @ "403" => (code, "Forbidden"),
-                                                code @ "404" => (code, "Not Found"),
-                                                code @ "405" => (code, "Method Not Allowed"),
-                                                code @ "406" => (code, "Not Acceptable"),
-                                                code @ "407" => (code, "Proxy Authentication Required"),
-                                                code @ "408" => (code, "Request Timeout"),
-                                                code @ "409" => (code, "Conflict"),
-                                                code @ "410" => (code, "Gone"),
-                                                code @ "411" => (code, "Length Required"),
-                                                code @ "412" => (code, "Precondition Failed"),
-                                                code @ "413" => (code, "Content Too Large"),
-                                                code @ "414" => (code, "URI Too Long"),
-                                                code @ "415" => (code, "Unsupported Media Type"),
-                                                code @ "416" => (code, "Range Not Satisfiable"),
-                                                code @ "417" => (code, "Expectation Failed"),
-                                                code @ "418" => (code, "I'm a teapot"),
-                                                code @ "421" => (code, "Misdirected Request"),
-                                                code @ "422" => (code, "Unprocessable Content"),
-                                                code @ "423" => (code, "Locked"),
-                                                code @ "424" => (code, "Failed Dependency"),
-                                                code @ "425" => (code, "Too Early"),
-                                                code @ "426" => (code, "Upgrade Required"),
-                                                code @ "428" => (code, "Precondition Required"),
-                                                code @ "429" => (code, "Too Many Requests"),
-                                                code @ "431" => (code, "Request Header Fields Too Large"),
-                                                code @ "451" => (code, "Unavailable For Legal Reasons"),
-                                                code @ "500" => (code, "Internal Server Error"),
-                                                code @ "501" => (code, "Not Implemented"),
-                                                code @ "502" => (code, "Bad Gateway"),
-                                                code @ "503" => (code, "Service Unavailable"),
-                                                code @ "504" => (code, "Gateway Timeout"),
-                                                code @ "505" => (code, "HTTP Version Not Supported"),
-                                                code @ "506" => (code, "Variant Also Negotiates"),
-                                                code @ "507" => (code, "Insufficient Storage"),
-                                                code @ "508" => (code, "Loop Detected"),
-                                                code @ "510" => (code, "Not Extended"),
-                                                code @ "511" => (code, "Network Authentication Required"),
-                                                code @ _ => (code,"Unknown")
-                                            }
+                                            code_num = status.parse::<u16>().unwrap_or(200);
+                                            (status,error_message(code_num))
                                         }
                                     };
-                                    code_num = code.parse::<u16>().unwrap_or(200);
                                     format!{"{protocol} {code} {msg}\r\n"}
                                 };
                             
@@ -534,34 +457,12 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
                     }
                 }
                 _ => {
-                    let contents = include_str!{"404.html"};
-                    let contents = contents.as_bytes();
-                    let length = contents.len();
-                    let c_type = "text/html";
-                    let response =
-                        format!("{protocol} 404 NOT FOUND\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\n\r\n");
-            
-                    stream.write_all(response.as_bytes())?;
-                    stream.write_all(&contents)?;
-                    // log
-                    logger.lock().unwrap().info(&format!{"{} -- [{:>10}] \"{request_line}\" 404 {length}", stream.peer_addr().unwrap().to_string(),
-                        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()})
+                    report_error(404,&request_line, &mut stream, &logger)?
                 }
             }
         } else { // PUT DELETE HEAD TRACE OPTIONS PATCH CONNECT
             // unsupported method
-            let contents = include_str!{"404.html"}; // 405
-            let contents = contents.as_bytes();
-            let length = contents.len();
-            let c_type = "text/html";
-            let response =
-                format!("{protocol} 405 Method Not Allowed\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\n\r\n");
-    
-            stream.write_all(response.as_bytes())?;
-            stream.write_all(&contents)?;
-            // log
-            logger.lock().unwrap().info(&format!{"{} -- [{:>10}] \"{request_line}\" 405 {length}", stream.peer_addr().unwrap().to_string(),
-                SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()})
+            report_error(405,&request_line, &mut stream, &logger)?
         }
     Ok(())
 }
@@ -591,6 +492,99 @@ fn read_mapping(mapping: &Vec<JsonData>) -> Vec<Mapping> {
     res
 }
 
+fn report_error(code: u16, request_line: &str, mut stream: &TcpStream, logger: &Mutex<log::SimLogger>) -> io::Result<()> {
+    let contents = if code == 404 {
+        ERR404.as_bytes()
+    } else {
+        let path = PathBuf::from(&format!{r"{code}.html"});
+        if path.is_file() {
+            &fs::read(&path)?
+        } else {
+            ERR404.as_bytes()
+        }
+    };
+    let length = contents.len();
+    let c_type = "text/html";
+    let protocol = "HTTP/1.1";
+    let msg = error_message(code);
+    let response =
+        format!("{protocol} {code} {msg}\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\n\r\n");
+
+    stream.write_all(response.as_bytes())?;
+    stream.write_all(&contents)?;
+    // log
+    logger.lock().unwrap().info(&format!{"{} -- [{:>10}] \"{request_line}\" {code} {length}", stream.peer_addr().unwrap().to_string(),
+        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()});
+    Ok(())
+}
+
+fn error_message(code: u16) -> String {
+    match code {
+        100 => "Continue",
+        101 => "Switching Protocols",
+        102 => "Processing",
+        103 => "Early Hints",
+        200 => "OK",
+        201 => "Created",
+        202 => "Accepted",
+        203 => "Non-Authoritative Information",
+        204 => "No Content",
+        205 => "Reset Content",
+        206 => "Partial Content",
+        207 => "Multi-Status",
+        208 => "Already Reported",
+        226 => "IM Used",
+        300 => "Multiple Choices",
+        301 => "Moved Permanently",
+        302 => "Found",
+        303 => "See Other",
+        304 => "Not Modified",
+        307 => "Temporary Redirect",
+        308 => "Permanent Redirect",
+        400 => "Bad Request",
+        401 => "Unauthorized",
+        402 => "Payment Required",
+        403 => "Forbidden",
+        404 => "Not Found",
+        405 => "Method Not Allowed",
+        406 => "Not Acceptable",
+        407 => "Proxy Authentication Required",
+        408 => "Request Timeout",
+        409 => "Conflict",
+        410 => "Gone",
+        411 => "Length Required",
+        412 => "Precondition Failed",
+        413 => "Content Too Large",
+        414 => "URI Too Long",
+        415 => "Unsupported Media Type",
+        416 => "Range Not Satisfiable",
+        417 => "Expectation Failed",
+        418 => "I'm a teapot",
+        421 => "Misdirected Request",
+        422 => "Unprocessable Content",
+        423 => "Locked",
+        424 => "Failed Dependency",
+        425 => "Too Early",
+        426 => "Upgrade Required",
+        428 => "Precondition Required",
+        429 => "Too Many Requests",
+        431 => "Request Header Fields Too Large",
+        451 => "Unavailable For Legal Reasons",
+        500 => "Internal Server Error",
+        501 => "Not Implemented",
+        502 => "Bad Gateway",
+        503 => "Service Unavailable",
+        504 => "Gateway Timeout",
+        505 => "HTTP Version Not Supported",
+        506 => "Variant Also Negotiates",
+        507 => "Insufficient Storage",
+        508 => "Loop Detected",
+        510 => "Not Extended",
+        511 => "Network Authentication Required",
+        _ => "Unknown",
+    }.to_string()
+}
+
 impl CgiOut {
     fn next(&mut self) -> Option<String> {
         let start = self.pos;
@@ -618,6 +612,7 @@ impl CgiOut {
         self.load[self.pos+1..].to_vec()
     }
 }
+
 
 /*fn read_n<R>(reader: R, bytes_to_read: u64) -> Vec<u8>
 where
