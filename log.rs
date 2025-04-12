@@ -6,12 +6,16 @@ use std::{
 };
 use io;
 
+static MAX_LINES: u32 = 10_1000;
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum Level {
      #[default]
     All,
-    Info,
+    Trace,
     Warning,
+    Error,
+    Info,
     Silent,
 }
 
@@ -59,13 +63,27 @@ impl LogFile {
         file: file,
         }
     }
+    
+    pub fn roll (&mut self) {
+        self.current_chunk += 1;
+        let name = format!{"simhttp-{}.{:05}", self.created, self.current_chunk};
+        let mut path = PathBuf::from(".");
+        path.set_file_name(&name);
+        path.set_extension("log");
+        self.file = File::create(path).expect("can't create log");
+    }
 }
 impl std::io::Write for LogFile {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        if buf[buf.len()-1] == b'\n' { // add count of all \n in the string
-            self.currnet_line += 1
-        }
         self.file.write_all(buf)?;
+        if buf[buf.len()-1] == b'\n' { // add count of all \n in the string
+            self.currnet_line += 1;
+            if self.currnet_line > MAX_LINES {
+                self.roll();
+                self.currnet_line = 0;
+            }
+        }
+        
         Ok(buf.len())
     }
 
