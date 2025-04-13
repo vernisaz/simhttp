@@ -6,7 +6,7 @@ use std::{
     io::{prelude::*, Error, ErrorKind, BufReader, self},
     net::{TcpListener, TcpStream,ToSocketAddrs},
     thread,
-    sync::{atomic::{AtomicBool,Ordering}, Arc,Mutex,LazyLock},
+    sync::{atomic::{AtomicBool,Ordering}, Arc,Mutex,LazyLock,OnceLock},
     path::{MAIN_SEPARATOR_STR,PathBuf},
     collections::HashMap,
     process::{Stdio,Command},
@@ -18,6 +18,7 @@ use simjson::JsonData::{Num,Text,Data,Arr,Bool,self};
 mod log;
 use log::Level;
 
+#[derive(Debug)]
 struct Mapping {
     web_path: String,
     path: String,
@@ -31,11 +32,21 @@ struct CgiOut {
 
 static ERR404: &str = include_str!{"404.html"};
 
-static LOGGER : LazyLock<Arc<Mutex<log::SimLogger>>> = LazyLock::new(|| Arc::new(Mutex::new(log::SimLogger::new(log::Level::All, log::LogFile::new()))));
-fn main() {
-    let logger = &*LOGGER;
-    let logger_clone = Arc::clone(&logger);
+static LOGGER : LazyLock<Mutex<log::SimLogger>> = LazyLock::new(|| Mutex::new(log::SimLogger::new(log::Level::All, log::LogFile::new())));
 
+static MIME: OnceLock<HashMap<String,String>> = OnceLock::new();
+
+static MAPPING: OnceLock<Vec<Mapping>> = OnceLock::new();
+
+fn init_mime(mime: HashMap<String,String>) {
+    MIME.set(mime).unwrap();
+}
+
+fn init_mapping(mapping: Vec<Mapping>) {
+    MAPPING.set(mapping).unwrap()
+}
+
+fn main() {
     let Ok(env) = fs::read_to_string("env.conf") else {
         eprintln!{"No env file in the current directory"}
         return
@@ -49,12 +60,11 @@ fn main() {
         if let Data(log) = log {
             if let Some(level) = log.get("level") {
                 if let Num(level) = level {
-                    if let Ok(mut logger) = logger.lock() {
+                    if let Ok(mut logger) = LOGGER.lock() {
                         let level = Level::from(*level as u32);
                         logger.info(&format!{"log level set to {:?}", &level});
                         logger.set_level(level);
                     }
-                    //logger.lock().unwrap().set_level(Level::from(*level as u32))
                 }
             }
         }
@@ -111,15 +121,15 @@ fn main() {
             } 
         }
     };
-    let mime = Arc::new(mime2);
+    init_mime(mime2);
     
     let tp = ThreadPool::new(*tp as usize);
 
     let listener = TcpListener::bind(format!{"{bind}:{port}"}).unwrap();
     let stop = Arc::new(AtomicBool::new(false));
     let stop_one = stop.clone();
-    let mapping = Arc::new(read_mapping(mapping));
-    logger_clone.lock().unwrap().info(&format!{"Server started at {bind}:{port}"});
+    init_mapping(read_mapping(mapping));
+    LOGGER.lock().unwrap().info(&format!{"Server started at {bind}:{port}"});
     
     thread::spawn(move || {
             println!{"Presss 'q' to stop"};
@@ -128,7 +138,6 @@ fn main() {
                 io::stdin().read_line(&mut input).expect("Failed to read line");
                 if input.starts_with("q") {
                     stop_one.store(true, Ordering::SeqCst);
-                    //println!{"Stop accepted"}
                     break
                 }
                 input.clear()
@@ -137,13 +146,10 @@ fn main() {
     
     for stream in listener.incoming() {
         let mut stream = stream.unwrap();
-        let mapping = Arc::clone(&mapping);
-        let mime = Arc::clone(&mime);
         let stop_two = stop.clone();
-        let logger_clone2 = Arc::clone(&logger);
         tp.execute(move || {
             loop {
-                match handle_connection(&stream, &mapping, &mime, &logger_clone2)  {
+                match handle_connection(&stream)  {
                      Err(err) => if err.kind() != ErrorKind::BrokenPipe { eprintln!{"err:{err}"} 
                          // can do it only if response isn't commited
                          let contents = ERR404; // 500
@@ -152,6 +158,8 @@ fn main() {
                          let c_type = "text/html";
                         if stream.write_all(format!("HTTP/1.1 500 INTERNAL SERVER ERROR\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\n\r\n").as_bytes()).is_ok() {
                             if stream.write_all(&contents).is_err() { break }
+                            LOGGER.lock().unwrap().info(&format!{"{} -- [{:>10}] \"??? ??? HTTP/1.1\" 500 {length}", stream.peer_addr().unwrap().to_string(),
+                                SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()});
                         } else {break}
                      } else { break}
                      _ => if stop_two.load(Ordering::SeqCst) { break }
@@ -164,7 +172,7 @@ fn main() {
     drop(tp)
 }
 
-fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &HashMap<String,String>, logger: &Mutex<log::SimLogger>) -> io::Result<()> {
+fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
     let mut buf_reader = BufReader::new(stream);
     let mut line = String::new();
     //let lines = buf_reader.lines(); // may still work
@@ -193,6 +201,7 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
     let mut cgi = false;
     let mut name = "".to_string();
     let mut path_info = None;
+    let mapping = MAPPING.get().unwrap();
     for e in mapping {
         if path.starts_with(&e.web_path) {
             cgi = e.cgi;
@@ -361,6 +370,8 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
                         if let Some(extra) = extra {
                             if let Some(mut stdin) = load.stdin.take() {
                                 thread::spawn(move || { // TODO consider using a separate thread pool
+                                        //let logger = &*LOGGER;
+                                        //logger.lock().unwrap().warning("input in thread");
                                         match stdin.write_all(&extra) {
                                             Err(err) => eprintln!{"can't write to SGI script: {err}"},
                                             _=> () //eprintln!{"written: {}", String::from_utf8_lossy( &extra)}
@@ -446,14 +457,14 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
                                 //eprintln!{"{:?}", String::from_utf8_lossy(&output.rest())}
                             }
                         }
-                        logger.lock().unwrap().info(&format!{"{} -- [{:>10}] \"{request_line}\" {code_num} {}", stream.peer_addr().unwrap().to_string(),
+                        LOGGER.lock().unwrap().info(&format!{"{} -- [{:>10}] \"{request_line}\" {code_num} {}", stream.peer_addr().unwrap().to_string(),
                            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis(), output.rest_len()})
                     } else {
                         let mut f = File::open(&path_translated)?;
                         let mut buffer = Vec::new();
                         let c_type =
                         if let Some(ref ext) = path_translated. extension() {
-                            mime.get(ext.to_str().unwrap())
+                            MIME.get().unwrap().get(ext.to_str().unwrap())
                         } else {None};
                         // read the whole file
                         f.read_to_end(&mut buffer)?;
@@ -467,17 +478,17 @@ fn handle_connection(mut stream: &TcpStream, mapping: &Vec<Mapping>, mime: &Hash
                         stream.write_all(response.as_bytes())?;
                         stream.write_all(&buffer)?;
                         // log
-                        logger.lock().unwrap().info(&format!{"{} -- [{:>10}] \"{request_line}\" 200 {length}", stream.peer_addr().unwrap().to_string(),
+                        LOGGER.lock().unwrap().info(&format!{"{} -- [{:>10}] \"{request_line}\" 200 {length}", stream.peer_addr().unwrap().to_string(),
                             SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()})
                     }
                 }
                 _ => {
-                    report_error(404,&request_line, &mut stream, &logger)?
+                    report_error(404,&request_line, &mut stream)?
                 }
             }
         } else { // PUT DELETE HEAD TRACE OPTIONS PATCH CONNECT
             // unsupported method
-            report_error(405,&request_line, &mut stream, &logger)?
+            report_error(405,&request_line, &mut stream)?
         }
     Ok(())
 }
@@ -507,7 +518,7 @@ fn read_mapping(mapping: &Vec<JsonData>) -> Vec<Mapping> {
     res
 }
 
-fn report_error(code: u16, request_line: &str, mut stream: &TcpStream, logger: &Mutex<log::SimLogger>) -> io::Result<()> {
+fn report_error(code: u16, request_line: &str, mut stream: &TcpStream) -> io::Result<()> {
     let contents = if code == 404 {
         ERR404.as_bytes()
     } else {
@@ -528,7 +539,7 @@ fn report_error(code: u16, request_line: &str, mut stream: &TcpStream, logger: &
     stream.write_all(response.as_bytes())?;
     stream.write_all(&contents)?;
     // log
-    logger.lock().unwrap().info(&format!{"{} -- [{:>10}] \"{request_line}\" {code} {length}", stream.peer_addr().unwrap().to_string(),
+    LOGGER.lock().unwrap().info(&format!{"{} -- [{:>10}] \"{request_line}\" {code} {length}", stream.peer_addr().unwrap().to_string(),
         SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()});
     Ok(())
 }
