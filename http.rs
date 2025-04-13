@@ -16,6 +16,7 @@ use std::{
 use simtpool::ThreadPool;
 use simjson::JsonData::{Num,Text,Data,Arr,Bool,self};
 mod log;
+use log::Level;
 
 struct Mapping {
     web_path: String,
@@ -44,6 +45,20 @@ fn main() {
         eprintln!{"Corrupted env file in the current directory"}
         return
     };
+    if let Some(log) = env.get("log") {
+        if let Data(log) = log {
+            if let Some(level) = log.get("level") {
+                if let Num(level) = level {
+                    if let Ok(mut logger) = logger.lock() {
+                        let level = Level::from(*level as u32);
+                        logger.info(&format!{"log level set to {:?}", &level});
+                        logger.set_level(level);
+                    }
+                    //logger.lock().unwrap().set_level(Level::from(*level as u32))
+                }
+            }
+        }
+    }
     let Some(tp) = env.get("threads") else {
         eprintln!{"No number of threads configured"}
         return

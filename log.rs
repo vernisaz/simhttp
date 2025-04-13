@@ -31,6 +31,19 @@ pub struct LogFile {
     file: File,
 }
 
+impl From<u32> for Level {
+    fn from(value: u32) -> Self {
+        match value {
+            0 => Level::All,
+            1 => Level::Trace,
+            2 => Level::Warning,
+            3 => Level::Error,
+            4 => Level::Info,
+            _ => Level::Silent,
+        }
+    }
+}
+
 impl <'a>SimLogger<'a> {
     pub fn new(level: Level, output: impl std::io::Write + Sync + Send +'static) -> Self {
         Self { level, output: Mutex::new(Box::new(output)) }
@@ -45,6 +58,9 @@ impl <'a>SimLogger<'a> {
     }
     pub fn warning(&mut self, message: &str) {
         self.log(Level::Warning, message)
+    }
+    pub fn set_level(&mut self, level: Level) {
+        self.level = level
     }
 }
 
