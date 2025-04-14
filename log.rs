@@ -59,6 +59,9 @@ impl <'a>SimLogger<'a> {
     pub fn warning(&mut self, message: &str) {
         self.log(Level::Warning, message)
     }
+    pub fn trace(&mut self, message: &str) {
+        self.log(Level::Trace, message)
+    }
     pub fn set_level(&mut self, level: Level) {
         self.level = level
     }

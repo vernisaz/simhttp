@@ -358,7 +358,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         let mut load = Command::new(&path_translated)
                          .stdout(Stdio::piped())
                          .stdin(Stdio::piped())
-                         .stderr(Stdio::inherit())
+                         .stderr(Stdio::piped())
                          .current_dir(&path_translated.parent().unwrap())
                          .env_clear()
                         .envs(cgi_env.unwrap()).spawn()?;
@@ -374,7 +374,12 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 });
                             }
                         }
+                        
                         let output = load.wait_with_output()?;
+                        let err = BufReader::new(&*output.stderr);
+                        err.lines().for_each(|line| {
+                            LOGGER.lock().unwrap().trace(& line.unwrap());
+                        });
                        // println!{"load {}", String::from_utf8_lossy( &output.stdout)}
                         let mut output = CgiOut{load:output.stdout, pos:0};
                         let mut code_num = 200;
