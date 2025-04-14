@@ -249,7 +249,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
         } 
         env.insert("REQUEST_METHOD".to_string(), method.to_string());
         env.insert("SERVER_PROTOCOL".to_string(), protocol.to_string());
-        env.insert("SERVER_SOFTWARE".to_string(), "SimHTTP/1.01b20".to_string());
+        env.insert("SERVER_SOFTWARE".to_string(), "SimHTTP/1.02b22".to_string());
         if let Some(ref path_info) = path_info {
              env.insert("PATH_INFO".to_string(), path_info.into());
         }
@@ -260,27 +260,22 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
             if !path_translated.is_absolute() {
                  path_translated = env::current_dir()?.join(path_translated)
             }
-            let path_translated = if let Some(ref path_info) = path_info {
+            let path_translated = if let Some(path_info) = path_info {
                 // sanitize path_info
-                let path_info_parts = path_info.split('/');
-                let mut sanitized_parts = Vec::new();
-                for part in path_info_parts {
+                let mut sanitized_parts = PathBuf::new();
+                for part in  rslash::to_unix_separator(path_info).split('/') {
                     match part {
-                        ".." => {
-                            if !sanitized_parts.is_empty() {
-                                sanitized_parts.pop();
-                            }
-                        }
+                        ".." => {sanitized_parts.pop();}
                         "." => (),
                         some => sanitized_parts.push(some)
                     }
                 }
-                rslash::adjust_separator(path_translated.to_str().unwrap().to_string() + &sanitized_parts.join(MAIN_SEPARATOR_STR))
+                path_translated.join(sanitized_parts)
             } else {
-                path_translated.to_str().unwrap().to_string()
+                path_translated
             };
             
-            env.insert("PATH_TRANSLATED".to_string(), path_translated);
+            env.insert("PATH_TRANSLATED".to_string(), path_translated.to_str().unwrap().to_string());
         }
         if !name.is_empty() {
             env.insert("SCRIPT_NAME".to_string(), name);
