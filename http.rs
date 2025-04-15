@@ -151,7 +151,8 @@ fn main() {
         tp.execute(move || {
             loop {
                 match handle_connection(&stream)  {
-                     Err(err) => if err.kind() != ErrorKind::BrokenPipe { eprintln!{"err:{err}"} 
+                     Err(err) => if err.kind() != ErrorKind::BrokenPipe { 
+                         LOGGER.lock().unwrap().error(&format!{"Err: {err}"});
                          // can do it only if response isn't commited
                          let contents = ERR404; // 500
                          let contents = contents.as_bytes();
@@ -270,7 +271,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
         if let Some(ref path_translated) = path_translated {
             let mut path_translated = PathBuf::from(&path_translated);
             path_translated.pop();
-            let mut path_translated = path_translated.as_path().canonicalize().unwrap();
+            let mut path_translated = path_translated.as_path().canonicalize()?;
             if !path_translated.is_absolute() {
                  path_translated = env::current_dir()?.join(path_translated)
             }
