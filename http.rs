@@ -22,7 +22,8 @@ use log::Level;
 struct Mapping {
     web_path: String,
     path: String,
-    cgi: bool
+    cgi: bool,
+    websocket: bool,
 }
 
 struct CgiOut {
@@ -199,13 +200,14 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
 
     let mut path_translated = None;
     let mut cgi = false;
+    let mut websocket = false;
     let mut name = "".to_string();
     let mut path_info = None;
     let mapping = MAPPING.get().unwrap();
     for e in mapping {
         if path.starts_with(&e.web_path) {
             cgi = e.cgi;
-            if cgi {
+            if cgi  {
                 let mut cgi_file = PathBuf::new();
                 cgi_file.push(e.path.clone());
                 name = path[e.web_path.len()..].to_string();
@@ -219,13 +221,25 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                 if cfg!(windows) {
                     name = name + ".exe";}
                 path_translated = Some(rslash::adjust_separator(e.path.clone() + MAIN_SEPARATOR_STR + &name))
+            } else if e.websocket {
+                websocket = true;
+                let mut ws_file = PathBuf::new();
+                ws_file.push(e.path.clone());
+                path_translated = Some(ws_file.to_str().unwrap().to_string())
             } else {
                 if path.chars().rev().nth(0) == Some('/') {
                     path += "index.html"
                 }
-                // TODO analyze if path traversal is possible
-                //let mut path_buf =  PathBuf::from(&e.path); path_buf.join( PathBuf::from(&path[e.web_path.len()..]));
-                path_translated = Some(rslash::adjust_separator(e.path.clone() + MAIN_SEPARATOR_STR + &path[e.web_path.len()..]));
+                let path_buf =  PathBuf::from(&e.path);
+                let mut sanitized_parts = PathBuf::new();
+                for part in  rslash::to_unix_separator(path[e.web_path.len()..].to_string()).split('/') {
+                    match part {
+                        ".." => {sanitized_parts.pop();}
+                        "." => (),
+                        some => sanitized_parts.push(some)
+                    }
+                }
+                path_translated = Some( path_buf.join(sanitized_parts).to_str().unwrap().to_string())
                 //eprintln!{"mapping found as {path_translated:?}"}
             }
             break
@@ -249,7 +263,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
         } 
         env.insert("REQUEST_METHOD".to_string(), method.to_string());
         env.insert("SERVER_PROTOCOL".to_string(), protocol.to_string());
-        env.insert("SERVER_SOFTWARE".to_string(), "SimHTTP/1.02b22".to_string());
+        env.insert("SERVER_SOFTWARE".to_string(), "SimHTTP/1.04b23".to_string());
         if let Some(ref path_info) = path_info {
              env.insert("PATH_INFO".to_string(), path_info.into());
         }
@@ -355,6 +369,9 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         if !path_translated.is_absolute() {
                              path_translated = env::current_dir()?.join(path_translated)
                         }
+                        //if websoket {
+                            
+                       // }
                         let mut load = Command::new(&path_translated)
                          .stdout(Stdio::piped())
                          .stdin(Stdio::piped())
@@ -505,14 +522,27 @@ fn read_mapping(mapping: &Vec<JsonData>) -> Vec<Mapping> {
         
         let Some(trans) = trans else { continue };
         let Text(trans)  = trans else { continue };
-        let cgi = match e.get("CGI") {
+        let mut cgi = match e.get("CGI") {
             None => false,
             Some(cgi) => * match cgi {
                 Bool(cgi) => cgi,
                 _ => &false
             }
         };
-        res.push(Mapping{ web_path:path.to_string()  + "/", path: trans.into(), cgi: cgi })
+        let websocket = match e.get("WS-CGI") {
+            None => false,
+            Some(websocket) => * match websocket {
+                Bool(websocket) => {
+                    if cgi && *websocket {
+                        LOGGER.lock().unwrap().warning(&format!{"Only WS_CGI or CGI can be set to 'true' for {path}, CGI is ignored."});
+                        cgi = false
+                    }
+                    websocket},
+                _ => &false
+            }
+        };
+        // TODO check for duplication web_path
+        res.push(Mapping{ web_path:path.to_string()  + "/", path: trans.into(), cgi: cgi, websocket: websocket })
     }
     res.sort_by(|a, b| b.web_path.len().cmp(&a.web_path.len()));
     res
