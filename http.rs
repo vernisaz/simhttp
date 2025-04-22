@@ -1,6 +1,7 @@
 extern crate simtpool;
 extern crate simjson;
 extern crate rslash;
+extern crate simweb;
 use std::{
     fs::{self,File},
     io::{prelude::*, Error, ErrorKind, BufReader, self},
@@ -15,8 +16,10 @@ use std::{
 };
 use simtpool::ThreadPool;
 use simjson::JsonData::{Num,Text,Data,Arr,Bool,self};
+use simweb::http_format_time;
 mod log;
 use log::Level;
+mod sha1;
 
 #[derive(Debug)]
 struct Mapping {
@@ -79,7 +82,7 @@ fn main() {
         return
     };
     let Some(bind) = env.get("bind") else {
-        eprintln!{"No binded addr is specified"}
+        eprintln!{"No bound addr is specified"}
         return
     };
     let Text(bind) = bind else {
@@ -106,7 +109,6 @@ fn main() {
     let mut mime2 = HashMap::new(); 
     if let Some(mime) = env.get("mime") {
         if let Arr(mime) = mime {
-            
             for el in mime {
                 if let Data(el) = el {
                     if let Some(en) = el.get("ext") {
@@ -181,7 +183,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
     let len = buf_reader.read_line(&mut line)?;
     if len < 10 { // http/1.x ...
         if len > 0 {
-            eprintln!{"bad request {line}"}}
+            LOGGER.lock().unwrap().error(&format!{"bad request {line}"})}
         return Err(Error::new(ErrorKind::BrokenPipe, "no data"))
     }
     line.truncate(len-2); // \r\n
@@ -323,6 +325,8 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                     }
                     _ => {env.insert("HTTP_".to_owned() + &key.to_uppercase().replace("-", "_").to_string(), val.to_string());},
                 }
+            } else {
+                 LOGGER.lock().unwrap().error(&format!{"unrecognized header {line}"})
             }
             line.clear()
         }
@@ -334,6 +338,9 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
              buf_reader.read_exact(&mut buffer)?;
             //println!{"input:-> {}", String::from_utf8_lossy( &buffer)}
             extra = Some(buffer)
+        }
+        if !websocket && env. get("HTTP_UPGRADE") == Some(&"websocket".to_string()) {
+            return report_error(404,&request_line, &mut stream)
         }
         Some(env)
     } else { 
@@ -370,9 +377,32 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         if !path_translated.is_absolute() {
                              path_translated = env::current_dir()?.join(path_translated)
                         }
-                        //if websoket {
+                        if websocket {
+                            // generate a respose first
+                            // it cab be generate by WS CGI, but
+                            let cgi_env = cgi_env.unwrap();
+                            let key = cgi_env.get("HTTP_SEC_WEBSOCKET_KEY").unwrap();
+                            let mut hasher = sha1::Sha1::new();
+                            let res = hasher.hash(key.to_owned());
+                            let mut load = Command::new(&path_translated)
+                             .stdout(Stdio::piped())
+                             .stdin(Stdio::piped())
+                             .stderr(Stdio::piped())
+                             .current_dir(&path_translated.parent().unwrap())
+                             .env_clear()
+                            .envs(cgi_env).spawn()?;
+                            if let Some(mut stdin) = load.stdin.take() {
+                                thread::spawn(move || {
+                                
+                                });
+                                if let Some(mut stdout) = load.stdout.take() {
+                                    loop {
+                                    }
+                                }
+                            }
                             
-                       // }
+                            return Err(Error::new(ErrorKind::Other, "Websocket closed"))
+                        }
                         let mut load = Command::new(&path_translated)
                          .stdout(Stdio::piped())
                          .stdin(Stdio::piped())
@@ -383,12 +413,10 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         if let Some(extra) = extra {
                             if let Some(mut stdin) = load.stdin.take() {
                                 thread::spawn(move || { // TODO consider using a separate thread pool
-                                        //let logger = &*LOGGER;
-                                        //logger.lock().unwrap().warning("input in thread");
-                                        match stdin.write_all(&extra) {
-                                            Err(err) => eprintln!{"can't write to SGI script: {err}"},
-                                            _=> () //eprintln!{"written: {}", String::from_utf8_lossy( &extra)}
-                                        }
+                                    match stdin.write_all(&extra) {
+                                        Err(err) => LOGGER.lock().unwrap().error(&format!{"can't write to SGI script: {err}"}),
+                                        _=> () //eprintln!{"written: {}", String::from_utf8_lossy( &extra)}
+                                    }
                                 });
                             }
                         }
@@ -489,9 +517,11 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         let c_type = if c_type.is_none() {
                             "octet-stream"
                         } else { c_type.unwrap() };
+                        let time = fs::metadata(&path_translated)?.modified()?;
+                        let time = http_format_time(time);
                         let length = buffer.len();
                         let response =
-                            format!("{protocol} 200 OK\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\n\r\n");
+                            format!("{protocol} 200 OK\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\nLast-modified: {time}\r\n\r\n");
                     
                         stream.write_all(response.as_bytes())?;
                         stream.write_all(&buffer)?;
