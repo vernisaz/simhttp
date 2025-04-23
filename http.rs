@@ -381,9 +381,10 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             // generate a respose first
                             // it cab be generate by WS CGI, but
                             let cgi_env = cgi_env.unwrap();
-                            let key = cgi_env.get("HTTP_SEC_WEBSOCKET_KEY").unwrap();
+                            let key = &cgi_env.get("HTTP_SEC_WEBSOCKET_KEY").unwrap();
                             let mut hasher = sha1::Sha1::new();
-                            let res = hasher.hash(key.to_owned());
+                            let res = hasher.hash(format!("{key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11"));
+                            
                             let mut load = Command::new(&path_translated)
                              .stdout(Stdio::piped())
                              .stdin(Stdio::piped())
@@ -391,6 +392,15 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                              .current_dir(&path_translated.parent().unwrap())
                              .env_clear()
                             .envs(cgi_env).spawn()?;
+                            
+                            let res = simweb::base64_encode_with_padding(&res);
+                            let mes = response_message(101);
+                            let response =
+                                format!("{protocol} 101 {mes}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {res}\r\n\r\n");
+                            stream.write_all(response.as_bytes())?;
+                            // log
+                            LOGGER.lock().unwrap().info(&format!{"{} -- [{:>10}] \"{request_line}\" 101 0", stream.peer_addr().unwrap().to_string(),
+                                SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()});
                             if let Some(mut stdin) = load.stdin.take() {
                                 thread::spawn(move || {
                                 
@@ -455,7 +465,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                             format!{"{protocol} {val}\r\n"}
                                         } else {
                                             code_num = val.parse::<u16>().unwrap_or(200);
-                                            let msg = error_message(code_num);
+                                            let msg = response_message(code_num);
                                             format!{"{protocol} {val} {msg}\r\n"}
                                         }
                                     } else {
@@ -470,7 +480,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         },
                                         None => {
                                             code_num = status.parse::<u16>().unwrap_or(200);
-                                            (status,error_message(code_num))
+                                            (status,response_message(code_num))
                                         }
                                     };
                                     format!{"{protocol} {code} {msg}\r\n"}
@@ -593,7 +603,7 @@ fn report_error(code: u16, request_line: &str, mut stream: &TcpStream) -> io::Re
     let length = contents.len();
     let c_type = "text/html";
     let protocol = "HTTP/1.1";
-    let msg = error_message(code);
+    let msg = response_message(code);
     let response =
         format!("{protocol} {code} {msg}\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\n\r\n");
 
@@ -605,7 +615,7 @@ fn report_error(code: u16, request_line: &str, mut stream: &TcpStream) -> io::Re
     Ok(())
 }
 
-fn error_message(code: u16) -> String {
+fn response_message(code: u16) -> String {
     match code {
         100 => "Continue",
         101 => "Switching Protocols",
@@ -692,7 +702,11 @@ impl CgiOut {
     }
     
     fn rest_len(&mut self) -> usize {
-        self.load.len() - self.pos - 1
+        if self.load.len() == 0 {
+            0
+        } else {
+            self.load.len() - self.pos - 1
+        }
     }
     
     fn rest(&mut self) -> Vec<u8> {
