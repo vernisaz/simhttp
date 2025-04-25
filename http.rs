@@ -13,6 +13,7 @@ use std::{
     process::{Stdio,Command},
     time::{SystemTime,UNIX_EPOCH},
     env,
+    cmp,
 };
 use simtpool::ThreadPool;
 use simjson::JsonData::{Num,Text,Data,Arr,Bool,self};
@@ -403,10 +404,31 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()});
                             if let Some(mut stdin) = load.stdin.take() {
                                 thread::spawn(move || {
-                                
+                                    let mut buffer = String::new();
+                                    loop {
+                                       /* stdin.read_line(&mut buffer)?; // read len
+                                        // decypher len
+                                        buffer.clear();
+                                        stdin.read_line(&mut buffer)?; // read payload
+                                        // remove tailing \r\n
+                                        match stream.write_all(encode_block(buffer.as_bytes())) {
+                                            Err(_) => break,
+                                            _ => ()
+                                        }*/
+                                    }
                                 });
                                 if let Some(mut stdout) = load.stdout.take() {
+                                    let mut buffer = [0_u8; 256];
                                     loop {
+                                        let l = stdout.read(&mut buffer)?; // read len
+                                        // decypher len
+                                        // buffer.clear();
+                                        let l = stdout.read(&mut buffer)?; // read payload
+                                        // remove tailing \r\n
+                                        match stream.write_all(encode_block(&buffer).as_slice()) {
+                                            Err(_) => break,
+                                            _ => ()
+                                        }
                                     }
                                 }
                             }
@@ -442,7 +464,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         let status = output.next();
                         if status.is_none() { // no headers
                             let len = output.rest_len() ;
-                            stream.write_all(format!{"{protocol} 200 OK\r\nContent-Length: {len}\r\n\r\n"}.as_bytes()).unwrap();
+                            stream.write_all(format!{"{protocol} 200 OK\r\nContent-Length: {len}\r\n\r\n"}.as_bytes())?;
                             if len > 0 {
                                 stream.write_all(&output.rest()).unwrap()
                             }
@@ -613,6 +635,51 @@ fn report_error(code: u16, request_line: &str, mut stream: &TcpStream) -> io::Re
     LOGGER.lock().unwrap().info(&format!{"{} -- [{:>10}] \"{request_line}\" {code} {length}", stream.peer_addr().unwrap().to_string(),
         SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()});
     Ok(())
+}
+
+fn encode_block(input: &[u8]) -> Vec<u8> {
+    let len = input.len();
+    let mut res = vec![];
+    res.reserve(len+5);
+    if len < 126 {
+        res.push(1_u8); // no cont, text
+        res.push(len as u8); // not masked
+        // no 4 bytes mask
+        for b in input {
+            res.push(*b)
+        }
+    }
+    res
+}
+
+fn decode_block(input: &[u8]) -> (Vec<u8>, u8) {
+    let last = input[0] & 1 == 1;
+    let op = input[0] >> 4;
+    let masked = input[1] & 1 == 1;
+    let (len, mut shift) = 
+    match input[1] >> 1 {
+        len @ 0..=125 => (len as u64, 2_usize),
+        126 => (input[2] as u64 | (input[3] as u64) << 8, 4_usize),
+        127 => (input[9] as u64 | (input[8] as u64)<<8 | (input[7] as u64)<<16 |
+          (input[6] as u64)<<24 | (input[4] as u64)<<32 | (input[4] as u64)<<40 | (input[3] as u64)<<48 | (input[2] as u64)<<56, 10_usize),
+        128_u8..=u8::MAX => unreachable!()
+    };
+    let mask = if masked {
+        [input[shift],input[shift+1],input[shift+2],input[shift+3]]
+    } else {
+        [0,0,0,0]
+    };
+    if masked {
+        shift += 4
+    }
+    let mut res = Vec::new ();
+    let len = cmp::min(shift+(len as usize),input.len( ));
+    let mut curr_mask = 0;
+    for i in shift..shift+len {
+        res.push(input[i] ^ mask[curr_mask]);
+        curr_mask = (curr_mask + 1) % 4
+    }
+    (res, op)
 }
 
 fn response_message(code: u16) -> String {
