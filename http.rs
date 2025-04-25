@@ -402,19 +402,23 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             // log
                             LOGGER.lock().unwrap().info(&format!{"{} -- [{:>10}] \"{request_line}\" 101 0", stream.peer_addr().unwrap().to_string(),
                                 SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()});
+                           /* let stream = Arc::new(Mutex::new(stream));
+
+                            let reader_stream = Arc::clone(&stream);
+                            let writer_stream = Arc::clone(&stream);*/
                             if let Some(mut stdin) = load.stdin.take() {
                                 thread::spawn(move || {
                                     let mut buffer = String::new();
+                                    let mut buffer = [0_u8;256];
+                                    
                                     loop {
-                                       /* stdin.read_line(&mut buffer)?; // read len
-                                        // decypher len
-                                        buffer.clear();
-                                        stdin.read_line(&mut buffer)?; // read payload
-                                        // remove tailing \r\n
-                                        match stream.write_all(encode_block(buffer.as_bytes())) {
-                                            Err(_) => break,
-                                            _ => ()
-                                        }*/
+                                        //let mut reader_stream = reader_stream.lock().unwrap();
+                                        //let len = stream.read(&mut buffer).unwrap();
+                                        let (data,kind) = decode_block(&buffer[0..len]);
+                                        //let string = String::from_utf8(data).unwrap();
+                                        writeln!(stdin, "{}", &data.len());
+                                        stdin.write_all(&data.as_slice()).unwrap();
+                                        stdin.write_all("\r\n".as_bytes()).unwrap();
                                     }
                                 });
                                 if let Some(mut stdout) = load.stdout.take() {
@@ -425,6 +429,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         // buffer.clear();
                                         let l = stdout.read(&mut buffer)?; // read payload
                                         // remove tailing \r\n
+                                        //let mut writer_stream = writer_stream.lock().unwrap();
                                         match stream.write_all(encode_block(&buffer).as_slice()) {
                                             Err(_) => break,
                                             _ => ()
