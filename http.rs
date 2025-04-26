@@ -149,10 +149,12 @@ fn main() {
         });
     
     for stream in listener.incoming() {
-        let mut stream = stream.unwrap();
+        let mut stream = stream.unwrap(); // TODO handle errors
         let stop_two = stop.clone();
+        
         tp.execute(move || {
             loop {
+                
                 match handle_connection(&stream)  {
                      Err(err) => if err.kind() != ErrorKind::BrokenPipe { 
                          LOGGER.lock().unwrap().error(&format!{"Err: {err}"});
@@ -161,6 +163,7 @@ fn main() {
                          let contents = contents.as_bytes();
                          let length = contents.len();
                          let c_type = "text/html";
+                         
                         if stream.write_all(format!("HTTP/1.1 500 INTERNAL SERVER ERROR\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\n\r\n").as_bytes()).is_ok() {
                             if stream.write_all(&contents).is_err() { break }
                             LOGGER.lock().unwrap().info(&format!{"{} -- [{:>10}] \"??? ??? HTTP/1.1\" 500 {length}", stream.peer_addr().unwrap().to_string(),
@@ -402,18 +405,18 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             // log
                             LOGGER.lock().unwrap().info(&format!{"{} -- [{:>10}] \"{request_line}\" 101 0", stream.peer_addr().unwrap().to_string(),
                                 SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()});
-                           /* let stream = Arc::new(Mutex::new(stream));
+                           //let stream = Arc::new(stream);
 
-                            let reader_stream = Arc::clone(&stream);
-                            let writer_stream = Arc::clone(&stream);*/
+                            //let reader_stream = Arc::clone(&stream);
+                            //let writer_stream = Arc::clone(&stream);
+                            let reader_stream = stream.try_clone().unwrap();
                             if let Some(mut stdin) = load.stdin.take() {
                                 thread::spawn(move || {
                                     let mut buffer = String::new();
                                     let mut buffer = [0_u8;256];
-                                    
+                                    let mut reader_stream: &TcpStream = &reader_stream;
                                     loop {
-                                        //let mut reader_stream = reader_stream.lock().unwrap();
-                                        //let len = stream.read(&mut buffer).unwrap();
+                                        let len = reader_stream.read(&mut buffer).unwrap();
                                         let (data,kind) = decode_block(&buffer[0..len]);
                                         //let string = String::from_utf8(data).unwrap();
                                         writeln!(stdin, "{}", &data.len());
@@ -421,16 +424,17 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         stdin.write_all("\r\n".as_bytes()).unwrap();
                                     }
                                 });
+                                let writer_stream = stream;
                                 if let Some(mut stdout) = load.stdout.take() {
                                     let mut buffer = [0_u8; 256];
+                                    let mut writer_stream: &TcpStream = &writer_stream;
                                     loop {
                                         let l = stdout.read(&mut buffer)?; // read len
                                         // decypher len
                                         // buffer.clear();
                                         let l = stdout.read(&mut buffer)?; // read payload
                                         // remove tailing \r\n
-                                        //let mut writer_stream = writer_stream.lock().unwrap();
-                                        match stream.write_all(encode_block(&buffer).as_slice()) {
+                                        match writer_stream.write_all(encode_block(&buffer).as_slice()) {
                                             Err(_) => break,
                                             _ => ()
                                         }
