@@ -230,9 +230,15 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                 path_translated = Some(rslash::adjust_separator(e.path.clone() + MAIN_SEPARATOR_STR + &name))
             } else if e.websocket {
                 websocket = true;
+                cgi = true;
                 let mut ws_file = PathBuf::new();
                 ws_file.push(e.path.clone());
-                path_translated = Some(ws_file.to_str().unwrap().to_string())
+                // add ext?
+                if cfg!(windows) {
+                    ws_file.set_extension("exe");
+                }
+                path_translated = Some(ws_file.to_str().unwrap().to_string());
+                eprintln!{"mapping for ws as  {path_translated:?}"}
             } else {
                 if path.chars().rev().nth(0) == Some('/') {
                     path += "index.html"
@@ -246,11 +252,11 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         some => sanitized_parts.push(some)
                     }
                 }
-                path_translated = Some( path_buf.join(sanitized_parts).to_str().unwrap().to_string())
-                //eprintln!{"mapping found as {path_translated:?}"}
+                path_translated = Some( path_buf.join(sanitized_parts).to_str().unwrap().to_string());
+                eprintln!{"mapping found as {path_translated:?}"}
             }
             break
-        } //else { println!{"path {path} not start with {}", e.web_path} }
+        } else { println!{"path {path} not start with {}", e.web_path} }
     }
     
     let mut content_len = 0_u64;
@@ -372,7 +378,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
         None };
         
         if method == "GET" || method == "POST" {
-           // eprintln!{"servicing {method} to {path_translated:?}"}
+            eprintln!{"servicing {method} to {path_translated:?} {cgi} {websocket}"}
             match path_translated {
                 Some(ref path_translated) if PathBuf::from(&path_translated).is_file() => {
                     let path_translated = PathBuf::from(&path_translated);
@@ -388,7 +394,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             let key = &cgi_env.get("HTTP_SEC_WEBSOCKET_KEY").unwrap();
                             let mut hasher = sha1::Sha1::new();
                             let res = hasher.hash(format!("{key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11"));
-                            
+                            eprintln!{"ws command {path_translated:?}"}
                             let mut load = Command::new(&path_translated)
                              .stdout(Stdio::piped())
                              .stdin(Stdio::piped())
@@ -405,41 +411,44 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             // log
                             LOGGER.lock().unwrap().info(&format!{"{} -- [{:>10}] \"{request_line}\" 101 0", stream.peer_addr().unwrap().to_string(),
                                 SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()});
-                           //let stream = Arc::new(stream);
-
-                            //let reader_stream = Arc::clone(&stream);
-                            //let writer_stream = Arc::clone(&stream);
-                            let reader_stream = stream.try_clone().unwrap();
+                            let mut reader_stream = stream;//.try_clone().unwrap();
                             if let Some(mut stdin) = load.stdin.take() {
-                                thread::spawn(move || {
-                                    let mut buffer = String::new();
+                                thread::scope(|s| {
+                                    s.spawn(|| {
                                     let mut buffer = [0_u8;256];
-                                    let mut reader_stream: &TcpStream = &reader_stream;
                                     loop {
                                         let len = reader_stream.read(&mut buffer).unwrap();
+                                        eprintln!("decolde {len}");
                                         let (data,kind) = decode_block(&buffer[0..len]);
-                                        //let string = String::from_utf8(data).unwrap();
                                         writeln!(stdin, "{}", &data.len());
                                         stdin.write_all(&data.as_slice()).unwrap();
                                         stdin.write_all("\r\n".as_bytes()).unwrap();
+                                        stdin.flush().unwrap();
+                                        let string = String::from_utf8_lossy(&data);
+                                        eprintln!("entered {string}");
                                     }
-                                });
-                                let writer_stream = stream;
+                                });//});
+                                
+                                let mut writer_stream = stream;
                                 if let Some(mut stdout) = load.stdout.take() {
                                     let mut buffer = [0_u8; 256];
-                                    let mut writer_stream: &TcpStream = &writer_stream;
                                     loop {
-                                        let l = stdout.read(&mut buffer)?; // read len
+                                        eprintln!("waiting to read");
+                                        let l = stdout.read(&mut buffer).unwrap(); // read len
                                         // decypher len
-                                        // buffer.clear();
-                                        let l = stdout.read(&mut buffer)?; // read payload
+                                        //buffer.clear();
+                                        eprintln!("len read");
+                                        let l = stdout.read(&mut buffer).unwrap(); // read payload
                                         // remove tailing \r\n
-                                        match writer_stream.write_all(encode_block(&buffer).as_slice()) {
+                                        let string = String::from_utf8(buffer[0..l].to_vec()).unwrap();
+                                         eprintln!("from ws cgi {string}");
+                                        match writer_stream.write_all(encode_block(&buffer[0..l]).as_slice()) {
                                             Err(_) => break,
                                             _ => ()
                                         }
                                     }
-                                }
+                                } else {eprintln!("no out");}
+                                });
                             }
                             
                             return Err(Error::new(ErrorKind::Other, "Websocket closed"))
@@ -614,7 +623,7 @@ fn read_mapping(mapping: &Vec<JsonData>) -> Vec<Mapping> {
             }
         };
         // TODO check for duplication web_path
-        res.push(Mapping{ web_path:path.to_string()  + "/", path: trans.into(), cgi: cgi, websocket: websocket })
+        res.push(Mapping{ web_path:if websocket {path.to_string()} else {path.to_string()  + "/"}, path: trans.into(), cgi: cgi, websocket: websocket })
     }
     res.sort_by(|a, b| b.web_path.len().cmp(&a.web_path.len()));
     res
@@ -648,10 +657,11 @@ fn report_error(code: u16, request_line: &str, mut stream: &TcpStream) -> io::Re
 
 fn encode_block(input: &[u8]) -> Vec<u8> {
     let len = input.len();
+    eprintln!("encoding bl {len}");
     let mut res = vec![];
     res.reserve(len+5);
     if len < 126 {
-        res.push(1_u8); // no cont, text
+        res.push(0x81_u8); // no cont, text
         res.push(len as u8); // not masked
         // no 4 bytes mask
         for b in input {
@@ -662,17 +672,18 @@ fn encode_block(input: &[u8]) -> Vec<u8> {
 }
 
 fn decode_block(input: &[u8]) -> (Vec<u8>, u8) {
-    let last = input[0] & 1 == 1;
-    let op = input[0] >> 4;
-    let masked = input[1] & 1 == 1;
+    let last = input[0] & 0x80 == 0x80;
+    let op = input[0] & 0x0f;
+    let masked = input[1] & 0x80 == 0x80;
     let (len, mut shift) = 
-    match input[1] >> 1 {
+    match input[1] & 0x7f {
         len @ 0..=125 => (len as u64, 2_usize),
         126 => (input[2] as u64 | (input[3] as u64) << 8, 4_usize),
         127 => (input[9] as u64 | (input[8] as u64)<<8 | (input[7] as u64)<<16 |
           (input[6] as u64)<<24 | (input[4] as u64)<<32 | (input[4] as u64)<<40 | (input[3] as u64)<<48 | (input[2] as u64)<<56, 10_usize),
         128_u8..=u8::MAX => unreachable!()
     };
+    
     let mask = if masked {
         [input[shift],input[shift+1],input[shift+2],input[shift+3]]
     } else {
@@ -683,8 +694,9 @@ fn decode_block(input: &[u8]) -> (Vec<u8>, u8) {
     }
     let mut res = Vec::new ();
     let len = cmp::min(shift+(len as usize),input.len( ));
+    //eprintln!("payload len {len} {masked} {shift}");
     let mut curr_mask = 0;
-    for i in shift..shift+len {
+    for i in shift..len {
         res.push(input[i] ^ mask[curr_mask]);
         curr_mask = (curr_mask + 1) % 4
     }
