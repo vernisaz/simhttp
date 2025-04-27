@@ -238,7 +238,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                     ws_file.set_extension("exe");
                 }
                 path_translated = Some(ws_file.to_str().unwrap().to_string());
-                eprintln!{"mapping for ws as  {path_translated:?}"}
+               // eprintln!{"mapping for ws as  {path_translated:?}"}
             } else {
                 if path.chars().rev().nth(0) == Some('/') {
                     path += "index.html"
@@ -253,10 +253,10 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                     }
                 }
                 path_translated = Some( path_buf.join(sanitized_parts).to_str().unwrap().to_string());
-                eprintln!{"mapping found as {path_translated:?}"}
+               // eprintln!{"mapping found as {path_translated:?}"}
             }
             break
-        } else { println!{"path {path} not start with {}", e.web_path} }
+        } //else { println!{"path {path} not start with {}", e.web_path} }
     }
     
     let mut content_len = 0_u64;
@@ -378,7 +378,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
         None };
         
         if method == "GET" || method == "POST" {
-            eprintln!{"servicing {method} to {path_translated:?} {cgi} {websocket}"}
+           // eprintln!{"servicing {method} to {path_translated:?} {cgi} {websocket}"}
             match path_translated {
                 Some(ref path_translated) if PathBuf::from(&path_translated).is_file() => {
                     let path_translated = PathBuf::from(&path_translated);
@@ -394,7 +394,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             let key = &cgi_env.get("HTTP_SEC_WEBSOCKET_KEY").unwrap();
                             let mut hasher = sha1::Sha1::new();
                             let res = hasher.hash(format!("{key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11"));
-                            eprintln!{"ws command {path_translated:?}"}
+                            //eprintln!{"ws command {path_translated:?}"}
                             let mut load = Command::new(&path_translated)
                              .stdout(Stdio::piped())
                              .stdin(Stdio::piped())
@@ -418,30 +418,42 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     let mut buffer = [0_u8;256];
                                     loop {
                                         let len = reader_stream.read(&mut buffer).unwrap();
-                                        eprintln!("decolde {len}");
+                                        if len == 0 { break }
+                                        //eprintln!("decolde {len}");
                                         let (data,kind) = decode_block(&buffer[0..len]);
-                                        writeln!(stdin, "{}", &data.len());
+                                        writeln!(stdin, "{}", &data.len()).unwrap();
                                         stdin.write_all(&data.as_slice()).unwrap();
                                         stdin.write_all("\r\n".as_bytes()).unwrap();
                                         stdin.flush().unwrap();
                                         let string = String::from_utf8_lossy(&data);
                                         eprintln!("entered {string}");
                                     }
-                                });//});
+                                });
                                 
+                                if let Some(mut stderr)  = load.stderr.take() {
+                                    s.spawn(|| {
+                                        let err = BufReader::new(stderr);
+                                        err.lines().for_each(|line|
+                                            LOGGER.lock().unwrap().error(&format!("err: {}", line.unwrap()))
+                                        );
+                                    }) ;
+                                }
                                 let mut writer_stream = stream;
                                 if let Some(mut stdout) = load.stdout.take() {
                                     let mut buffer = [0_u8; 256];
                                     loop {
-                                        eprintln!("waiting to read");
+                                        //eprintln!("waiting to read");
                                         let l = stdout.read(&mut buffer).unwrap(); // read len
+                                        if len < 3 { break } // 
                                         // decypher len
+                                        let string = String::from_utf8(buffer[0..l-2].to_vec()).unwrap();
+                                        let l = string.parse::<u64>().unwrap();
                                         //buffer.clear();
-                                        eprintln!("len read");
+                                        eprintln!("len read {l}");
                                         let l = stdout.read(&mut buffer).unwrap(); // read payload
                                         // remove tailing \r\n
-                                        let string = String::from_utf8(buffer[0..l].to_vec()).unwrap();
-                                         eprintln!("from ws cgi {string}");
+                                        //let string = String::from_utf8(buffer[0..l].to_vec()).unwrap();
+                                         //eprintln!("from ws cgi {string}");
                                         match writer_stream.write_all(encode_block(&buffer[0..l]).as_slice()) {
                                             Err(_) => break,
                                             _ => ()
