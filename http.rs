@@ -276,7 +276,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
         } 
         env.insert("REQUEST_METHOD".to_string(), method.to_string());
         env.insert("SERVER_PROTOCOL".to_string(), protocol.to_string());
-        env.insert("SERVER_SOFTWARE".to_string(), "SimHTTP/1.04b23".to_string());
+        env.insert("SERVER_SOFTWARE".to_string(), "SimHTTP/1.10b27".to_string());
         if let Some(ref path_info) = path_info {
              env.insert("PATH_INFO".to_string(), path_info.into());
         }
