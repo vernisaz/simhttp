@@ -276,7 +276,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
         } 
         env.insert("REQUEST_METHOD".to_string(), method.to_string());
         env.insert("SERVER_PROTOCOL".to_string(), protocol.to_string());
-        env.insert("SERVER_SOFTWARE".to_string(), "SimHTTP/1.10b27".to_string());
+        env.insert("SERVER_SOFTWARE".to_string(), "SimHTTP/1.10b28".to_string());
         if let Some(ref path_info) = path_info {
              env.insert("PATH_INFO".to_string(), path_info.into());
         }
@@ -389,7 +389,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         }
                         if websocket {
                             // generate a respose first
-                            // it cab be generate by WS CGI, but
+                            // it can be generate by WS CGI, but
                             let cgi_env = cgi_env.unwrap();
                             let key = &cgi_env.get("HTTP_SEC_WEBSOCKET_KEY").unwrap();
                             let mut hasher = sha1::Sha1::new();
@@ -400,7 +400,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                              .stdin(Stdio::piped())
                              .stderr(Stdio::piped())
                              .current_dir(&path_translated.parent().unwrap())
-                             .env_clear()
+                             .env_clear() // can be a flag telling to purge system env or not
                             .envs(cgi_env).spawn()?;
                             
                             let res = simweb::base64_encode_with_padding(&res);
@@ -412,7 +412,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             LOGGER.lock().unwrap().info(&format!{"{} -- [{:>10}] \"{request_line}\" 101 0", stream.peer_addr().unwrap().to_string(),
                                 SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()});
                             let mut reader_stream = stream;//.try_clone().unwrap();
-                            if let Some(mut stdin) = load.stdin.take() {
+                            if let Some(mut stdin) = load.stdin.take() { // TODO rethink when WS CGI can't read
                                 thread::scope(|s| {
                                     s.spawn(|| {
                                     let mut buffer = [0_u8;256];
@@ -430,7 +430,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     }
                                 });
                                 
-                                if let Some(mut stderr)  = load.stderr.take() {
+                                if let Some(stderr)  = load.stderr.take() {
                                     s.spawn(|| {
                                         let err = BufReader::new(stderr);
                                         err.lines().for_each(|line|
@@ -444,13 +444,14 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     loop {
                                         //eprintln!("waiting to read");
                                         let l = stdout.read(&mut buffer).unwrap(); // read len
-                                        if len < 3 { break } // 
+                                        if l < 3 { break } // 
                                         // decypher len
                                         let string = String::from_utf8(buffer[0..l-2].to_vec()).unwrap();
                                         let l = string.parse::<u64>().unwrap();
                                         //buffer.clear();
-                                        eprintln!("len read {l}");
+                                        //eprintln!("len read {l}");
                                         let l = stdout.read(&mut buffer).unwrap(); // read payload
+                                        if len == 0 { break }
                                         // remove tailing \r\n
                                         //let string = String::from_utf8(buffer[0..l].to_vec()).unwrap();
                                          //eprintln!("from ws cgi {string}");
@@ -486,7 +487,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         let output = load.wait_with_output()?;
                         let err = BufReader::new(&*output.stderr);
                         err.lines().for_each(|line| {
-                            LOGGER.lock().unwrap().trace(& line.unwrap());
+                            LOGGER.lock().unwrap().trace(& line.unwrap()); // maybe to do not lock for every line and do everything in batch?
                         });
                        // println!{"load {}", String::from_utf8_lossy( &output.stdout)}
                         let mut output = CgiOut{load:output.stdout, pos:0};
@@ -672,13 +673,32 @@ fn encode_block(input: &[u8]) -> Vec<u8> {
     eprintln!("encoding bl {len}");
     let mut res = vec![];
     res.reserve(len+5);
-    if len < 126 {
-        res.push(0x81_u8); // no cont, text
-        res.push(len as u8); // not masked
-        // no 4 bytes mask
-        for b in input {
-            res.push(*b)
+    res.push(0x81_u8); // no cont (last), text
+    match len as u64 {
+        1..126 => {
+            res.push(len as u8); // not masked
         }
+        126..0xffffffff_u64 => { // u16::MAX
+            res.push(126 as u8); // not masked
+            res.push((len >> 8) as u8);
+            res.push((len & 255) as u8);
+        }
+        0xffffffff_u64..=u64::MAX => {
+            res.push(127 as u8); // not masked
+            res.push((len >> 56 & 255) as u8);
+            res.push((len >> 48 & 255) as u8);
+            res.push((len >> 40 & 255) as u8);
+            res.push((len >> 32 & 255) as u8);
+            res.push((len >> 24 & 255) as u8);
+            res.push((len >> 16 & 255) as u8);
+            res.push((len >> 8 & 255) as u8);
+            res.push((len & 255) as u8);
+        }
+        _ => unreachable!() // 0 is filtered out to do not call the method
+    }
+    // no 4 bytes mask for server to client
+    for b in input {
+        res.push(*b)
     }
     res
 }
