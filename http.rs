@@ -237,6 +237,9 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                 if cfg!(windows) {
                     ws_file.set_extension("exe");
                 }
+                if e.web_path.len() < path.len() {
+                    path_info = Some(path[e.web_path.len()..].to_string());
+                }
                 path_translated = Some(ws_file.to_str().unwrap().to_string());
                // eprintln!{"mapping for ws as  {path_translated:?}"}
             } else {
@@ -450,14 +453,18 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         let l = string.parse::<u64>().unwrap();
                                         //buffer.clear();
                                         //eprintln!("len read {l}");
-                                        let l = stdout.read(&mut buffer).unwrap(); // read payload
-                                        if len == 0 { break }
-                                        // remove tailing \r\n
-                                        //let string = String::from_utf8(buffer[0..l].to_vec()).unwrap();
-                                         //eprintln!("from ws cgi {string}");
-                                        match writer_stream.write_all(encode_block(&buffer[0..l]).as_slice()) {
-                                            Err(_) => break,
-                                            _ => ()
+                                        let mut remain = l as u64;
+                                        while remain > 0 {
+                                            let l = stdout.read(&mut buffer).unwrap(); // read payload
+                                            if len == 0 { break }
+                                            // remove tailing \r\n
+                                            //let string = String::from_utf8(buffer[0..l].to_vec()).unwrap();
+                                             //eprintln!("from ws cgi {string}");
+                                            match writer_stream.write_all(encode_block(&buffer[0..l]).as_slice()) {
+                                                Err(_) => break,
+                                                _ => ()
+                                            }
+                                            remain -= l as u64;
                                         }
                                     }
                                 } else {eprintln!("no out");}
