@@ -228,7 +228,8 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                 if cfg!(windows) {
                     name = name + ".exe";}
                 path_translated = Some(rslash::adjust_separator(e.path.clone() + MAIN_SEPARATOR_STR + &name))
-            } else if e.websocket {
+            } else if e.websocket && (path == e.web_path || 
+                    path[e.web_path.len()..e.web_path.len()+1] == *"/") {
                 websocket = true;
                 cgi = true;
                 let mut ws_file = PathBuf::new();
