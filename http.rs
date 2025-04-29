@@ -35,6 +35,8 @@ struct CgiOut {
     pos: usize,
 }
 
+const VERSION : &str = "SimHTTP/1.11b32";
+
 static ERR404: &str = include_str!{"404.html"};
 
 static LOGGER : LazyLock<Mutex<log::SimLogger>> = LazyLock::new(|| Mutex::new(log::SimLogger::new(log::Level::All, log::LogFile::new())));
@@ -280,7 +282,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
         } 
         env.insert("REQUEST_METHOD".to_string(), method.to_string());
         env.insert("SERVER_PROTOCOL".to_string(), protocol.to_string());
-        env.insert("SERVER_SOFTWARE".to_string(), "SimHTTP/1.10b28".to_string());
+        env.insert("SERVER_SOFTWARE".to_string(), VERSION.to_string());
         if let Some(ref path_info) = path_info {
              env.insert("PATH_INFO".to_string(), path_info.into());
         }
@@ -426,6 +428,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         //eprintln!("decolde {len}");
                                         let (data,kind,_) = decode_block(&buffer[0..len]);
                                         if kind != 1 { break } // currently support only UTF8 strings, no continuation
+                                        // TODO think how mark block size: 1. in fron 4 chars len, or 2. end mark like 0x00
                                         if stdin.write_all(&data.as_slice()).is_err() {break};
                                         
                                         stdin.flush().unwrap();
@@ -663,7 +666,7 @@ fn report_error(code: u16, request_line: &str, mut stream: &TcpStream) -> io::Re
 
 fn encode_block(input: &[u8]) -> Vec<u8> {
     let len = input.len();
-    eprintln!("encoding bl {len}");
+    //eprintln!("encoding bl {len}");
     let mut res = vec![];
     res.reserve(len+5);
     res.push(0x81_u8); // no cont (last), text
