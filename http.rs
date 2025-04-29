@@ -419,15 +419,15 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             if let Some(mut stdin) = load.stdin.take() { // TODO rethink when WS CGI can't read
                                 thread::scope(|s| {
                                     s.spawn(|| {
-                                    let mut buffer = [0_u8;256];
+                                    let mut buffer = [0_u8;1024]; // TODO make a costant
                                     loop {
                                         let len = reader_stream.read(&mut buffer).unwrap();
                                         if len == 0 { break }
                                         //eprintln!("decolde {len}");
-                                        let (data,kind) = decode_block(&buffer[0..len]);
-                                        if writeln!(stdin, "{}", &data.len()).is_err() {break};
-                                        stdin.write_all(&data.as_slice()).unwrap();
-                                        stdin.write_all("\r\n".as_bytes()).unwrap();
+                                        let (data,kind,_) = decode_block(&buffer[0..len]);
+                                        if kind != 1 { break } // currently support only UTF8 strings, no continuation
+                                        if stdin.write_all(&data.as_slice()).is_err() {break};
+                                        
                                         stdin.flush().unwrap();
                                         let string = String::from_utf8_lossy(&data);
                                         eprintln!("entered {string}");
@@ -444,18 +444,11 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 }
                                 let mut writer_stream = stream;
                                 if let Some(mut stdout) = load.stdout.take() {
-                                    let lr = [13_u8,10_u8];
-                                    let reader = BufReader::new(stdout);
-                                    /* it waits for new output */
-                                    for line in reader.lines() {
-                                        let output = line.unwrap();
-                                        if !output.is_empty() { 
-                                            match writer_stream.write_all(encode_block(output.as_bytes()).as_slice()) {
-                                                Err(_) => break,
-                                                _ => ()
-                                            }
-                                        }
-                                        match writer_stream.write_all(encode_block(&lr).as_slice()) {
+                                    let mut buffer = [0_u8;1024]; // TODO make a costant
+                                    loop {
+                                        let len = stdout.read(&mut buffer).unwrap();
+                                        if len == 0 { break }
+                                        match writer_stream.write_all(encode_block(&buffer[0..len]).as_slice()) {
                                             Err(_) => break,
                                             _ => ()
                                         }
@@ -703,7 +696,7 @@ fn encode_block(input: &[u8]) -> Vec<u8> {
     res
 }
 
-fn decode_block(input: &[u8]) -> (Vec<u8>, u8) {
+fn decode_block(input: &[u8]) -> (Vec<u8>, u8, bool) {
     let last = input[0] & 0x80 == 0x80;
     let op = input[0] & 0x0f;
     let masked = input[1] & 0x80 == 0x80;
@@ -732,7 +725,7 @@ fn decode_block(input: &[u8]) -> (Vec<u8>, u8) {
         res.push(input[i] ^ mask[curr_mask]);
         curr_mask = (curr_mask + 1) % 4
     }
-    (res, op)
+    (res, op, last)
 }
 
 fn response_message(code: u16) -> String {
