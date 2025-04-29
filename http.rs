@@ -425,7 +425,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         if len == 0 { break }
                                         //eprintln!("decolde {len}");
                                         let (data,kind) = decode_block(&buffer[0..len]);
-                                        writeln!(stdin, "{}", &data.len()).unwrap();
+                                        if writeln!(stdin, "{}", &data.len()).is_err() {break};
                                         stdin.write_all(&data.as_slice()).unwrap();
                                         stdin.write_all("\r\n".as_bytes()).unwrap();
                                         stdin.flush().unwrap();
@@ -444,28 +444,20 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 }
                                 let mut writer_stream = stream;
                                 if let Some(mut stdout) = load.stdout.take() {
-                                    let mut buffer = [0_u8; 256];
-                                    loop {
-                                        //eprintln!("waiting to read");
-                                        let l = stdout.read(&mut buffer).unwrap(); // read len
-                                        if l < 3 { break } // 
-                                        // decypher len
-                                        let string = String::from_utf8(buffer[0..l-2].to_vec()).unwrap();
-                                        let l = string.parse::<u64>().unwrap();
-                                        //buffer.clear();
-                                        //eprintln!("len read {l}");
-                                        let mut remain = l as u64;
-                                        while remain > 0 {
-                                            let l = stdout.read(&mut buffer).unwrap(); // read payload
-                                            if len == 0 { break }
-                                            // remove tailing \r\n
-                                            //let string = String::from_utf8(buffer[0..l].to_vec()).unwrap();
-                                             //eprintln!("from ws cgi {string}");
-                                            match writer_stream.write_all(encode_block(&buffer[0..l]).as_slice()) {
+                                    let lr = [13_u8,10_u8];
+                                    let reader = BufReader::new(stdout);
+                                    /* it waits for new output */
+                                    for line in reader.lines() {
+                                        let output = line.unwrap();
+                                        if !output.is_empty() { 
+                                            match writer_stream.write_all(encode_block(output.as_bytes()).as_slice()) {
                                                 Err(_) => break,
                                                 _ => ()
                                             }
-                                            remain -= l as u64;
+                                        }
+                                        match writer_stream.write_all(encode_block(&lr).as_slice()) {
+                                            Err(_) => break,
+                                            _ => ()
                                         }
                                     }
                                 } else {eprintln!("no out");}
@@ -702,7 +694,7 @@ fn encode_block(input: &[u8]) -> Vec<u8> {
             res.push((len >> 8 & 255) as u8);
             res.push((len & 255) as u8);
         }
-        _ => unreachable!() // 0 is filtered out to do not call the method
+        _ => unreachable!("wrong {}", len) // 0 is filtered out to do not call the method
     }
     // no 4 bytes mask for server to client
     for b in input {
