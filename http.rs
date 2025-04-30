@@ -330,7 +330,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         }
                     }
                     "content-length" => { // read load 
-                        content_len = val.parse::<u64>().unwrap(); // TODO error hundling
+                        content_len = val.parse::<u64>().unwrap(); // TODO error handling
                         env.insert("CONTENT_LENGTH".to_string(), val.trim().to_string());
                     }
                     "content-type" => {
