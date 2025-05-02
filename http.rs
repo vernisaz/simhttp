@@ -213,6 +213,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
     let mut name = "".to_string();
     let mut path_info = None;
     let mapping = MAPPING.get().unwrap();
+    let mut preserve_env = false;
     for e in mapping {
         if path.starts_with(&e.web_path) {
             cgi = e.cgi;
@@ -233,6 +234,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
             } else if e.websocket && (path == e.web_path || 
                     path[e.web_path.len()..e.web_path.len()+1] == *"/") {
                 websocket = true;
+                preserve_env = !e.cgi;
                 cgi = true;
                 let mut ws_file = PathBuf::new();
                 ws_file.push(e.path.clone());
@@ -268,10 +270,12 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
     let mut content_len = 0_u64;
     let mut extra = None;
     let cgi_env = if cgi {
-        let mut env : HashMap<String, String> =
+        let mut env : HashMap<String, String> = if preserve_env {
+            env::vars().collect()
+        } else {
             env::vars().filter(|&(ref k, _)|
-             k != "PATH"
-         ).collect();
+             k != "PATH").collect()
+        };
         env.insert("GATEWAY_INTERFACE".to_string(), "CGI/1.1".to_string());
         env.insert("QUERY_STRING".to_string(), query);
         if let Ok(peer_addr) = stream.peer_addr() {
@@ -394,6 +398,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                              path_translated = env::current_dir()?.join(path_translated)
                         }
                         if websocket {
+                            // https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API/Writing_WebSocket_servers
                             // generate a respose first
                             // it can be generate by WS CGI, but
                             let cgi_env = cgi_env.unwrap();
@@ -432,8 +437,8 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         if stdin.write_all(&data.as_slice()).is_err() {break};
                                         
                                         stdin.flush().unwrap();
-                                        let string = String::from_utf8_lossy(&data);
-                                        eprintln!("entered {string}");
+                                        //let string = String::from_utf8_lossy(&data);
+                                        //eprintln!("entered {string}");
                                     }
                                 });
                                 
@@ -612,7 +617,7 @@ fn read_mapping(mapping: &Vec<JsonData>) -> Vec<Mapping> {
         
         let Some(trans) = trans else { continue };
         let Text(trans)  = trans else { continue };
-        let mut cgi = match e.get("CGI") {
+        let cgi = match e.get("CGI") {
             None => false,
             Some(cgi) => * match cgi {
                 Bool(cgi) => cgi,
@@ -624,8 +629,8 @@ fn read_mapping(mapping: &Vec<JsonData>) -> Vec<Mapping> {
             Some(websocket) => * match websocket {
                 Bool(websocket) => {
                     if cgi && *websocket {
-                        LOGGER.lock().unwrap().warning(&format!{"Only WS_CGI or CGI can be set to 'true' for {path}, CGI is ignored."});
-                        cgi = false
+                        LOGGER.lock().unwrap().warning(&format!{"When WS_CGI and CGI set to 'true' for {path}, ENV will be cleaned as for CGI."});
+                        //cgi = false
                     }
                     websocket},
                 _ => &false
