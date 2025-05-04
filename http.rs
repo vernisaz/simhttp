@@ -442,7 +442,10 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         //let string = String::from_utf8_lossy(&data);
                                         //eprintln!("entered {string}");
                                     }
-                                    panic!("need to terminate endpoint!");
+                                    stdin.write_all(&[255_u8,255,255,0]).unwrap();
+                                        
+                                    stdin.flush().unwrap();
+                                    eprintln!("need to terminate endpoint!");
                                 });
 
                                 if let Some(stderr)  = load.stderr.take() {
