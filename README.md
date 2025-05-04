@@ -12,8 +12,8 @@ supporting the standard OS piping. Such approach is more beneficial than offered
 Although web applications can look not so slick as when used the Rocket.
 
 ## Building
-RustBee scripting file is provided to build the server. There are 4 dependencies from
-microlibraries crates pool. They should be cloned and built first.
+RustBee scripting file is provided to build the server. There are 4 dependencies from the
+micro libraries crates pool. They should be cloned and built first.
 - [RightSlash](https://github.com/vernisaz/right_slash)
 - [SimJSON](https://github.com/vernisaz/simjson)
 - [SimThreadPool](https://github.com/vernisaz/simtpool)
@@ -27,7 +27,7 @@ The configuration syntax is self describing.
 Just execute its executable file. Press 'q' for stop.
 
 ## Websocket
-The server provides a limited support of websocket protocol as WS-CGI.
+The server provides a limited support of WebSocket protocol as WS-CGI.
 
 ## Status
 Current version is SimHTTP/1.11b32. It's a beta version.

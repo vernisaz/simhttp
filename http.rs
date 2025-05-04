@@ -428,8 +428,10 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     s.spawn(|| {
                                     let mut buffer = [0_u8;1024]; // TODO make a costant
                                     loop {
-                                        let len = reader_stream.read(&mut buffer).unwrap();
-                                        if len == 0 { break }
+                                        let len = match reader_stream.read(&mut buffer) {
+                                            Ok(len) => if len == 0 { break } else { len },
+                                            Err(_) => break,
+                                        };
                                         //eprintln!("decolde {len}");
                                         let (data,kind,_) = decode_block(&buffer[0..len]);
                                         if kind != 1 { break } // currently support only UTF8 strings, no continuation
