@@ -442,8 +442,9 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         //let string = String::from_utf8_lossy(&data);
                                         //eprintln!("entered {string}");
                                     }
+                                    panic!("need to terminate endpoint!");
                                 });
-                                
+
                                 if let Some(stderr)  = load.stderr.take() {
                                     s.spawn(|| {
                                         let err = BufReader::new(stderr);
@@ -466,7 +467,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 } else {eprintln!("no out");}
                                 });
                             }
-                            
+                            load.wait().unwrap();
                             return Err(Error::new(ErrorKind::Other, "Websocket closed"))
                         }
                         let mut load = Command::new(&path_translated)
