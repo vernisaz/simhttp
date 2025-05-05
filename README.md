@@ -9,8 +9,9 @@ However an interest to Java dropped recent years, so I decided to use Rust for t
 TRWS - is a successor of TJWS, but instead of servlets it runs CGI web applications which can be written in
 any language including Rust. It also supports websocket endpoints. They can be applications
 supporting the standard OS piping. Such approach is more beneficial than offered by Rocket A web framework for Rust gear Rust. 
-Although web applications can look not so slick as when used the Rocket.
-
+Although web applications can look not so slick as when used the Rocket. If you use **hyper**, then you need to
+build a server for the particular use case. Using SimHttp is a lose coupling approach when you do not need to rebuild a server for every use.
+It's also CI/CD friendly.
 ## Building
 RustBee scripting file is provided to build the server. There are 4 dependencies from the
 micro libraries crates pool. They should be cloned and built first.
@@ -30,4 +31,4 @@ Just execute its executable file. Press 'q' for stop.
 The server provides a limited support of WebSocket protocol as WS-CGI.
 
 ## Status
-Current version is SimHTTP/1.11b32. It's a beta version.
+Current version is SimHTTP/1.11b33. It's a beta version.
