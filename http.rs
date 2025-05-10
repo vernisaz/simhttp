@@ -35,7 +35,7 @@ struct CgiOut {
     pos: usize,
 }
 
-const VERSION : &str = "SimHTTP/1.11b34";
+const VERSION : &str = "SimHTTP/1.11b35";
 
 static ERR404: &str = include_str!{"404.html"};
 
@@ -446,7 +446,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         //let string = String::from_utf8_lossy(&data);
                                         //eprintln!("entered {string}");
                                     }
-                                    stdin.write_all(&[255_u8,255,255,0]).unwrap();
+                                    stdin.write_all(&[255_u8,255,255,5]).unwrap();
                                         
                                     stdin.flush().unwrap();
                                     //eprintln!("need to terminate endpoint!");
