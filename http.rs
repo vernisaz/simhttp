@@ -35,7 +35,7 @@ struct CgiOut {
     pos: usize,
 }
 
-const VERSION : &str = "SimHTTP/1.11b33";
+const VERSION : &str = "SimHTTP/1.11b34";
 
 static ERR404: &str = include_str!{"404.html"};
 
@@ -76,6 +76,10 @@ fn main() {
             }
         }
     }
+    let no_terminal = if let Some(val) = env.get("no terminal") {
+        if let Bool(val) = val {
+            val.to_owned()
+        } else {false } } else { false };
     let Some(tp) = env.get("threads") else {
         eprintln!{"No number of threads configured"}
         return
@@ -136,8 +140,8 @@ fn main() {
     let stop_one = stop.clone();
     init_mapping(read_mapping(mapping));
     LOGGER.lock().unwrap().info(&format!{"Server started at {bind}:{port}"});
-    
-    thread::spawn(move || {
+    if !no_terminal {
+       thread::spawn(move || {
             println!{"Presss 'q' to stop"};
             let mut input = String::new();
             loop {
@@ -149,7 +153,7 @@ fn main() {
                 input.clear()
             }
         });
-    
+    }
     for stream in listener.incoming() {
         let mut stream = stream.unwrap(); // TODO handle errors
         let stop_two = stop.clone();
