@@ -446,7 +446,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         //let string = String::from_utf8_lossy(&data);
                                         //eprintln!("entered {string}");
                                     }
-                                    stdin.write_all(&[255_u8,255,255,5]).unwrap();
+                                    stdin.write_all(&[255_u8,255,255,4]).unwrap(); // TODO consider also using 6 - Acknowledge
                                         
                                     stdin.flush().unwrap();
                                     //eprintln!("need to terminate endpoint!");
