@@ -45,6 +45,8 @@ static MIME: OnceLock<HashMap<String,String>> = OnceLock::new();
 
 static MAPPING: OnceLock<Vec<Mapping>> = OnceLock::new();
 
+const MAX_LINE_LEN : usize = 4096;
+
 fn init_mime(mime: HashMap<String,String>) {
     MIME.set(mime).unwrap();
 }
@@ -430,7 +432,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             if let Some(mut stdin) = load.stdin.take() { // TODO rethink when WS CGI can't read
                                 thread::scope(|s| {
                                     s.spawn(|| {
-                                    let mut buffer = [0_u8;1024]; // TODO make a costant
+                                    let mut buffer = [0_u8;MAX_LINE_LEN]; 
                                     loop {
                                         let len = match reader_stream.read(&mut buffer) {
                                             Ok(len) => if len == 0 { break } else { len },
