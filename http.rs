@@ -448,7 +448,8 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         //let string = String::from_utf8_lossy(&data);
                                         //eprintln!("entered {string}");
                                     }
-                                    //stdin.write_all(&[255_u8,255,255,4]).unwrap(); // TODO consider also using 6 - Acknowledge
+                                    #[cfg(target_os = "windows")]
+                                    stdin.write_all(&[255_u8,255,255,4]).unwrap(); // TODO consider also using 6 - Acknowledge
                                         
                                     stdin.flush().unwrap();
                                     //eprintln!("need to terminate endpoint!");
@@ -475,6 +476,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     }
                                 } else {eprintln!("no out");}
                                 });
+                                #[cfg(not(target_os = "linux"))]
                                 stdin.write_all(&[255_u8,255,255,4]).unwrap();
                             }
                             load.wait().unwrap();
