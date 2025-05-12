@@ -476,7 +476,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     }
                                 } else {eprintln!("no out");}
                                 });
-                                #[cfg(not(target_os = "linux"))]
+                                #[cfg(not(target_os = "windows"))]
                                 stdin.write_all(&[255_u8,255,255,4]).unwrap();
                             }
                             load.wait().unwrap();
