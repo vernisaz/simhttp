@@ -448,7 +448,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         //let string = String::from_utf8_lossy(&data);
                                         //eprintln!("entered {string}");
                                     }
-                                    #[cfg(target_os = "windows")]
+                                    //#[cfg(target_os = "windows")]
                                     stdin.write_all(&[255_u8,255,255,4]).unwrap(); // TODO consider also using 6 - Acknowledge
                                         
                                     stdin.flush().unwrap();
@@ -476,8 +476,6 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     }
                                 } else {eprintln!("no out");}
                                 });
-                                #[cfg(not(target_os = "windows"))]
-                                stdin.write_all(&[255_u8,255,255,4]).unwrap();
                             }
                             load.wait().unwrap();
                             return Err(Error::new(ErrorKind::Other, "Websocket closed"))
