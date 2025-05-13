@@ -605,7 +605,12 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         stream.write_all(response.as_bytes())?;
                         stream.write_all(&buffer)?;
                         // log
-                        LOGGER.lock().unwrap().info(&format!{"{} -- [{:>10}] \"{request_line}\" 200 {length}", stream.peer_addr().unwrap().to_string(),
+                        let addr =
+                        match stream.peer_addr() {
+                            Ok(addr) => addr.to_string(),
+                            _ => "disconnected".to_string()
+                        };
+                        LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" 200 {length}", 
                             SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()})
                     }
                 }
