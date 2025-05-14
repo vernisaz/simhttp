@@ -174,7 +174,12 @@ fn main() {
                          
                         if stream.write_all(format!("HTTP/1.1 500 INTERNAL SERVER ERROR\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\n\r\n").as_bytes()).is_ok() {
                             if stream.write_all(&contents).is_err() { break }
-                            LOGGER.lock().unwrap().info(&format!{"{} -- [{:>10}] \"??? ??? HTTP/1.1\" 500 {length}", stream.peer_addr().unwrap().to_string(),
+                            let addr =
+                                match stream.peer_addr() {
+                                    Ok(addr) => addr.to_string(),
+                                    _ => "disconnected".to_string()
+                                };
+                            LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"??? ??? HTTP/1.1\" 500 {length}",
                                 SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()});
                         } else {break}
                      } else { break}
@@ -189,6 +194,11 @@ fn main() {
 }
 
 fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
+    let addr =
+        match stream.peer_addr() {
+            Ok(addr) => addr.to_string(),
+            _ => "disconnected".to_string()
+        };
     let mut buf_reader = BufReader::new(stream);
     let mut line = String::new();
     //let lines = buf_reader.lines(); // may still work
@@ -426,7 +436,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 format!("{protocol} 101 {mes}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {res}\r\n\r\n");
                             stream.write_all(response.as_bytes())?;
                             // log
-                            LOGGER.lock().unwrap().info(&format!{"{} -- [{:>10}] \"{request_line}\" 101 0", stream.peer_addr().unwrap().to_string(),
+                            LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" 101 0",
                                 SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()});
                             let mut reader_stream = stream;//.try_clone().unwrap();
                             if let Some(mut stdin) = load.stdin.take() { // TODO rethink when WS CGI can't read
@@ -580,7 +590,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 //eprintln!{"{:?}", String::from_utf8_lossy(&output.rest())}
                             }
                         }
-                        LOGGER.lock().unwrap().info(&format!{"{} -- [{:>10}] \"{request_line}\" {code_num} {}", stream.peer_addr().unwrap().to_string(),
+                        LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" {code_num} {}",
                            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis(), output.rest_len()})
                     } else {
                         let mut f = File::open(&path_translated)?;
@@ -603,11 +613,6 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         stream.write_all(response.as_bytes())?;
                         stream.write_all(&buffer)?;
                         // log
-                        let addr =
-                        match stream.peer_addr() {
-                            Ok(addr) => addr.to_string(),
-                            _ => "disconnected".to_string()
-                        };
                         LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" 200 {length}", 
                             SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()})
                     }
@@ -682,7 +687,12 @@ fn report_error(code: u16, request_line: &str, mut stream: &TcpStream) -> io::Re
     stream.write_all(response.as_bytes())?;
     stream.write_all(&contents)?;
     // log
-    LOGGER.lock().unwrap().info(&format!{"{} -- [{:>10}] \"{request_line}\" {code} {length}", stream.peer_addr().unwrap().to_string(),
+    let addr =
+        match stream.peer_addr() {
+            Ok(addr) => addr.to_string(),
+            _ => "disconnected".to_string()
+        };
+    LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" {code} {length}",
         SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()});
     Ok(())
 }
