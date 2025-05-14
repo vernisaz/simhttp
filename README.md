@@ -31,4 +31,4 @@ Just execute its executable file. Press 'q' for stop.
 The server provides a limited support of WebSocket protocol as WS-CGI.
 
 ## Status
-Current version is SimHTTP/1.11b33. It's a beta version.
+Current version is SimHTTP/1.11b35. It's a beta version.
