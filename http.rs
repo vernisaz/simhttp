@@ -452,14 +452,8 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         let (data,kind,_) = decode_block(&buffer[0..len]);
                                         if kind != 1 { break } // currently support only UTF8 strings, no continuation
                                         // TODO think how mark block size: 1. in fron 4 chars len, or 2. end mark like 0x00
-                                        #[cfg(target_os = "windows")]
                                         if stdin.write_all(&data.as_slice()).is_err() {break};
-                                        #[cfg(not(target_os = "windows"))]
-                                        match stdin.write_all(&data.as_slice()) {
-                                            Ok(()) => stdin.flush().unwrap(),
-                                            _ => ()
-                                        }
-                                        #[cfg(target_os = "windows")]
+
                                         stdin.flush().unwrap();
                                         //let string = String::from_utf8_lossy(&data);
                                         //eprintln!("entered {string}");
