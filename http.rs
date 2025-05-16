@@ -569,7 +569,8 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     format!{"{protocol} {code} {msg}\r\n"}
                                 };
                             
-                            while let Some(header)  = output.next() {
+                            while let Some(mut header)  = output.next() {
+                                header = header.trim().to_string(); // consider simple trunc(2)
                                 if let Some((key,val)) = header.split_once(": ") {
                                     let key = key.to_lowercase();
                                     if key == "location" {
@@ -589,7 +590,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             stream.write_all(status.as_bytes())?;
                             stream.write_all(headers.as_bytes())?;
                             let len = output.rest_len() ; // why not content-length ?
-                            //eprintln!{"{status}\n{headers}Content-Length: {len}\r\n\r\n"}
+                            //eprintln!{"{status}{headers}Content-Length: {len}"}
                             stream.write_all(format!{"Content-Length: {len}\r\n\r\n"}.as_bytes())?;
                             if len > 0 {
                                 stream.write_all(&output.rest())?;
