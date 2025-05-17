@@ -475,7 +475,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 }
                                 let mut writer_stream = stream;
                                 if let Some(mut stdout) = load.stdout.take() {
-                                    let mut buffer = [0_u8;1024]; // TODO make a costant
+                                    let mut buffer = [0_u8;MAX_LINE_LEN]; 
                                     loop {
                                         let Ok(len) = stdout.read(&mut buffer) else {
                                             break
