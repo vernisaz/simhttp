@@ -459,9 +459,11 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         //eprintln!("entered {string}");
                                     }
 
-                                    stdin.write_all(&[255_u8,255,255,4]).unwrap(); // TODO consider also using 6 - Acknowledge
+                                    match stdin.write_all(&[255_u8,255,255,4]) { // TODO consider also using 6 - Acknowledge
+                                        Ok(()) => stdin.flush().unwrap(),
                                         
-                                    stdin.flush().unwrap();
+                                        Err(err) => ()
+                                    }
                                     //eprintln!("need to terminate endpoint!");
                                 });
 
