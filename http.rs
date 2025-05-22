@@ -462,7 +462,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     match stdin.write_all(&[255_u8,255,255,4]) { // TODO consider also using 6 - Acknowledge
                                         Ok(()) => stdin.flush().unwrap(),
                                         
-                                        Err(err) => ()
+                                        Err(_) => ()
                                     }
                                     //eprintln!("need to terminate endpoint!");
                                 });
