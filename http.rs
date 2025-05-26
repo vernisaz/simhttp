@@ -142,6 +142,7 @@ fn main() {
     let stop_one = stop.clone();
     init_mapping(read_mapping(mapping));
     LOGGER.lock().unwrap().info(&format!{"Server started at {bind}:{port}"});
+    let stop_listener = listener.try_clone().unwrap();
     if !no_terminal {
        thread::spawn(move || {
             println!{"Presss 'q' to stop"};
@@ -154,6 +155,7 @@ fn main() {
                 }
                 input.clear()
             }
+            drop(stop_listener)
         });
     }
     for stream in listener.incoming() {
@@ -451,7 +453,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         //eprintln!("decolde {len}");
                                         let (data,kind,_) = decode_block(&buffer[0..len]);
                                         if kind != 1 { break } // currently support only UTF8 strings, no continuation
-                                        // TODO think how mark block size: 1. in fron 4 chars len, or 2. end mark like 0x00
+                                        // TODO think how mark block size: 1. in from 4 chars len, or 2. end mark like 0x00
                                         if stdin.write_all(&data.as_slice()).is_err() {break};
 
                                         stdin.flush().unwrap();

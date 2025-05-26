@@ -4,13 +4,14 @@ It is a personal web server for Rust web applications. It supports servicing and
 files supporting [CGI](https://www.rfc-editor.org/rfc/rfc3875).
 ## History
 I've implemented TJWS back in 1999. It has the purpose to run and debug small web applications. 
-However the interest to Java dropped recent years, so I decided to use Rust for the server.
+However the interest to Java dropped recent years, so I decided to use Rust for a similar server.
 
 TRWS - is a successor of TJWS, but instead of servlets it runs CGI web applications which can be written in
 any language including Rust. It also supports websocket endpoints. They can be applications
 supporting the standard OS piping. Such approach is more beneficial than offered by Rocket A web framework for Rust gear Rust. 
 Although web applications can look not so slick as when used the Rocket. If you use **hyper**, then you need to
-build a server for the particular use case. SimHttp uses a lose coupling approach when you do not need to rebuild a server for every case.
+build a server for the particular use case. SimHttp uses a lose coupling approach when you do not need to rebuild a server 
+for every case.
 It's also CI/CD friendly.
 ## Building
 RustBee scripting file is provided to build the server. There are 4 dependencies from the
@@ -22,7 +23,7 @@ micro libraries crates pool. They should be cloned and built first.
 
 ## Configuring
 One JSON file is used for configuring the server. The file has to be in the same directory as the server.
-The configuration syntax is self describing. 
+The configuration syntax is a self describing. 
 
 ## Running
 Just execute its executable file. Press 'q' for stop.
