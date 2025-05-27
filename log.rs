@@ -28,6 +28,7 @@ pub struct LogFile {
     currnet_line: u32,
     current_chunk: u32,
     created: u64,
+    path: Option<String>,
     file: File,
 }
 
@@ -82,6 +83,7 @@ impl LogFile {
         LogFile { currnet_line: 0,
         current_chunk: 0,
         created: created,
+        path: None,
         file: file,
         }
     }
@@ -91,11 +93,21 @@ impl LogFile {
         let name = format!{"simhttp-{}", self.created};
         let ext = format!{"{:05}.log", self.current_chunk};
 
-        let mut path = PathBuf::from(".");
+        let mut path = match &self.path {
+            None => PathBuf::from("."),
+            Some (path) => PathBuf::from(path)
+        };
         path.set_file_name(&name);
         path.set_extension(ext);
         // TODO consider current file drop, then file rename to the new name
         // and create file with the original name
+        //let mut current_path = PathBuf::from(name);
+        //current_path.set_extension("log");
+        //drop(self.file);
+        //if fs::rename(&current_path, &path).is_err() {
+        //    eprintln!("Can't rename chunk {path:?} at rolling");
+        //}
+        //self.file = File::create(&current_path).expect(&format!("can't create log {current_path:?}"));
         self.file = File::create(path).expect("can't create log");
     }
 }
