@@ -88,10 +88,14 @@ impl LogFile {
     
     pub fn roll (&mut self) {
         self.current_chunk += 1;
-        let name = format!{"simhttp-{}.{:05}", self.created, self.current_chunk};
+        let name = format!{"simhttp-{}", self.created};
+        let ext = format!{"{:05}.log", self.current_chunk};
+
         let mut path = PathBuf::from(".");
         path.set_file_name(&name);
-        path.set_extension("log");
+        path.set_extension(ext);
+        // TODO consider current file drop, then file rename to the new name
+        // and create file with the original name
         self.file = File::create(path).expect("can't create log");
     }
 }
