@@ -1,8 +1,9 @@
 use std::{
-    fs::{File},
+    fs::{self,File},
     time::{SystemTime,UNIX_EPOCH},
     path::{/*MAIN_SEPARATOR_STR,*/PathBuf},
     sync::{Mutex},
+    io::{Seek},
 };
 use io;
 
@@ -76,7 +77,7 @@ impl LogFile {
         let created = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
         let name = format!{"simhttp-{}", created};
         let mut path = PathBuf::from(".");
-        path.set_file_name(&name);
+        path.push(name);
         path.set_extension("log");
         let file = File::create(path).expect("can't create log");
     
@@ -90,27 +91,24 @@ impl LogFile {
     
     pub fn roll (&mut self) {
         self.current_chunk += 1;
-        let name = format!{"simhttp-{}", self.created};
-        let ext = format!{"{:05}.log", self.current_chunk};
-
         let mut path = match &self.path {
             None => PathBuf::from("."),
             Some (path) => PathBuf::from(path)
         };
-        path.set_file_name(&name);
-        path.set_extension(ext);
-        // TODO consider current file drop, then file rename to the new name
-        // and create file with the original name
-        //let mut current_path = PathBuf::from(name);
-        //current_path.set_extension("log");
-        //drop(self.file);
-        //if fs::rename(&current_path, &path).is_err() {
-        //    eprintln!("Can't rename chunk {path:?} at rolling");
-        //}
-        //self.file = File::create(&current_path).expect(&format!("can't create log {current_path:?}"));
-        self.file = File::create(path).expect("can't create log");
+        let name = format!{"simhttp-{}", self.created};
+        path.push(name);
+        path.set_extension("log");
+        let mut copy_path = path.clone();
+        copy_path.set_extension( format!{"log.{:05}", self.current_chunk});
+
+        if fs::copy(path, copy_path).is_ok() {
+            if self.file.rewind().is_ok() {
+                let _ = self.file.set_len(0);
+            }
+        }
     }
 }
+
 impl std::io::Write for LogFile {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.file.write_all(buf)?;
