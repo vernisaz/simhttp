@@ -2,7 +2,6 @@ use std::{
     fs::{self,File},
     time::{SystemTime,UNIX_EPOCH},
     path::{/*MAIN_SEPARATOR_STR,*/PathBuf},
-    sync::{Mutex},
     io::{Seek},
 };
 use io;
@@ -22,13 +21,13 @@ pub enum Level {
 
 pub struct SimLogger<'a> {
     level: Level,
-    output: Mutex<Box<dyn std::io::Write + Sync + Send + 'a>>,
+    output: Box<dyn std::io::Write + Sync + Send + 'a>,
 }
 
 pub struct LogFile {
     currnet_line: u32,
     current_chunk: u32,
-    created: u64,
+    name: String,
     path: Option<String>,
     file: File,
 }
@@ -48,11 +47,11 @@ impl From<u32> for Level {
 
 impl <'a>SimLogger<'a> {
     pub fn new(level: Level, output: impl std::io::Write + Sync + Send +'static) -> Self {
-        Self { level, output: Mutex::new(Box::new(output)) }
+        Self { level, output: Box::new(output) }
     }
     pub fn log(&mut self, level: Level, message: &str) {
         if self.level.clone() as u32 <= level as u32 {
-            writeln!(self.output.lock().unwrap(), "{}", message).unwrap();
+            writeln!(self.output, "{}", message).unwrap();
         }
     }
     pub fn info(&mut self, message: &str) {
@@ -77,14 +76,33 @@ impl LogFile {
         let created = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
         let name = format!{"simhttp-{}", created};
         let mut path = PathBuf::from(".");
-        path.push(name);
+        path.push(name.clone());
         path.set_extension("log");
         let file = File::create(path).expect("can't create log");
     
         LogFile { currnet_line: 0,
         current_chunk: 0,
-        created: created,
         path: None,
+        name: name,
+        file: file,
+        }
+    }
+    
+    pub fn from(path: impl Into<String>, name: &impl AsRef<str>) -> Self {
+        let created = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+        let args = vec![Box::new(format!("{created}"))]; // created 
+        let name:String = name.as_ref().to_string();
+        let name = simweb::interpolate(&name,&args);
+        let path:String=path.into();
+        let mut log_path = PathBuf::from(&path);
+        log_path.push(name.clone());
+        log_path.set_extension("log");
+        let file = File::create(log_path).expect("can't create log");
+    
+        LogFile { currnet_line: 0,
+        current_chunk: 0,
+        path: Some(path),
+        name: name,
         file: file,
         }
     }
@@ -95,8 +113,7 @@ impl LogFile {
             None => PathBuf::from("."),
             Some (path) => PathBuf::from(path)
         };
-        let name = format!{"simhttp-{}", self.created};
-        path.push(name);
+        path.push(self.name.clone());
         path.set_extension("log");
         let mut copy_path = path.clone();
         copy_path.set_extension( format!{"log.{:05}", self.current_chunk});

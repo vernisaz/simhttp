@@ -5,4 +5,4 @@
 Unfotunately interruptable isn't supported for *TcpListener* by Rust. There is some recomendation to obtain OS
 level of **TcpListener** using *as_raw_fd()* on Unix and *as_raw_socket()* pointers and then call *shutdown()* and
 *WSAshutdown()* correspondingly.
-2. There is no clear mechanism of closing websocket. However it could be non critical problem.
+2. There is no clear mechanism of closing websocket. However it could be a not critical problem.

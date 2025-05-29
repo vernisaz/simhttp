@@ -27,7 +27,7 @@ One JSON file is used for configuring the server. The file has to be in the same
 The configuration syntax is a self describing. 
 
 ## Running
-Just execute its executable file. Press 'q' for stop.
+Just execute its executable file. Press 'q' for stop. (See a note in the [issues](https://github.com/vernisaz/simhttp/blob/master/issues.md))
 
 ## Websocket
 The server provides a limited support of WebSocket protocol as WS-CGI.
