@@ -19,7 +19,7 @@ use simtpool::ThreadPool;
 use simjson::JsonData::{Num,Text,Data,Arr,Bool,self};
 use simweb::http_format_time;
 mod log;
-use log::Level;
+use log::{Level,LogFile};
 mod sha1;
 
 #[derive(Debug)]
@@ -35,11 +35,11 @@ struct CgiOut {
     pos: usize,
 }
 
-const VERSION : &str = "SimHTTP/1.11b37";
+const VERSION : &str = "SimHTTP/1.12b38";
 
 static ERR404: &str = include_str!{"404.html"};
 
-static LOGGER : LazyLock<Mutex<log::SimLogger>> = LazyLock::new(|| Mutex::new(log::SimLogger::new(log::Level::All, log::LogFile::new())));
+static LOGGER : LazyLock<Mutex<log::SimLogger>> = LazyLock::new(|| Mutex::new(log::SimLogger::new(log::Level::All, io::stdout())));
 
 static MIME: OnceLock<HashMap<String,String>> = OnceLock::new();
 
@@ -76,6 +76,23 @@ fn main() {
                     }
                 }
             }
+            if let Some(out) = log.get("out") {
+                if let Data(out) = out {
+                    if let Some(path) = out.get("path") {
+                        if let Text(path) = path {
+                            let name = 
+                            if let Some(name) = out.get("name") {
+                                if let Text(name) = name { name } else { "simhttp-${0}"}
+                            } else {
+                                "simhttp-${0}"
+                            };
+                            LOGGER.lock().unwrap().set_output(LogFile::from(path,&name));
+                        }
+                    } else {
+                        LOGGER.lock().unwrap().set_output(LogFile::new());
+                    }
+                }
+            }    
         }
     }
     let no_terminal = if let Some(val) = env.get("no terminal") {

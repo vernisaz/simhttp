@@ -3,6 +3,7 @@ use std::{
     time::{SystemTime,UNIX_EPOCH},
     path::{/*MAIN_SEPARATOR_STR,*/PathBuf},
     io::{Seek},
+    fmt::Display,
 };
 use io;
 
@@ -69,6 +70,9 @@ impl <'a>SimLogger<'a> {
     pub fn set_level(&mut self, level: Level) {
         self.level = level
     }
+    pub fn set_output(&mut self, output: impl std::io::Write + Sync + Send + 'a) {
+        self.output = Box::new(output)
+    }
 }
 
 impl LogFile {
@@ -90,9 +94,9 @@ impl LogFile {
     
     pub fn from(path: impl Into<String>, name: &impl AsRef<str>) -> Self {
         let created = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
-        let args = vec![Box::new(format!("{created}"))]; // created 
+        //let args = format!("{vec![Box::new(created}"))]; // created 
         let name:String = name.as_ref().to_string();
-        let name = simweb::interpolate(&name,&args);
+        let name = simweb::interpolate(&name,&vec![Box::new(&created as &dyn Display)]);
         let path:String=path.into();
         let mut log_path = PathBuf::from(&path);
         log_path.push(name.clone());
