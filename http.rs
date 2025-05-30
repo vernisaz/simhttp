@@ -35,7 +35,7 @@ struct CgiOut {
     pos: usize,
 }
 
-const VERSION : &str = "SimHTTP/1.12b38";
+const VERSION : &str = "SimHTTP/1.12b39";
 
 static ERR404: &str = include_str!{"404.html"};
 
@@ -91,7 +91,7 @@ fn main() {
         }
     }
     let no_terminal = if let Some(Bool(val)) = env.get("no terminal") {
-        val.to_owned() };
+         val.to_owned()} else {false};
     let Some(Num(tp)) = env.get("threads") else {
         eprintln!{"No number of threads configured"}
         return
@@ -637,35 +637,24 @@ fn read_mapping(mapping: &Vec<JsonData>) -> Vec<Mapping> {
     let mut res = Vec::new();
     for e in mapping {
         let Data(e) = e else { continue };
-        let path = e.get("path");
+        let Some(Text(path)) = e.get("path") else { continue; };
         
-        let Some(path) = path else { continue; };
-        let Text(path) = path else { continue; };
-        let trans = e.get("translated");
-        
-        let Some(trans) = trans else { continue };
-        let Text(trans)  = trans else { continue };
+        let Some(Text(trans)) = e.get("translated") else { continue };
         let cgi = match e.get("CGI") {
-            None => false,
-            Some(cgi) => * match cgi {
-                Bool(cgi) => cgi,
-                _ => &false
-            }
+            Some(Bool(cgi)) => cgi,
+            _ => &false
         };
         let websocket = match e.get("WS-CGI") {
-            None => false,
-            Some(websocket) => * match websocket {
-                Bool(websocket) => {
-                    if cgi && *websocket {
+            Some(Bool(websocket)) => {
+                    if *cgi && *websocket {
                         LOGGER.lock().unwrap().warning(&format!{"When WS_CGI and CGI set to 'true' for {path}, ENV will be cleaned as for CGI."});
                         //cgi = false
                     }
                     websocket},
-                _ => &false
-            }
+            _ => &false
         };
         // TODO check for duplication web_path
-        res.push(Mapping{ web_path:if websocket {path.to_string()} else {path.to_string()  + "/"}, path: trans.into(), cgi: cgi, websocket: websocket })
+        res.push(Mapping{ web_path:if *websocket {path.to_string()} else {path.to_string()  + "/"}, path: trans.into(), cgi: *cgi, websocket: *websocket })
     }
     res.sort_by(|a, b| b.web_path.len().cmp(&a.web_path.len()));
     res
