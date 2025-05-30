@@ -65,72 +65,48 @@ fn main() {
         eprintln!{"Corrupted env file in the current directory"}
         return
     };
-    if let Some(log) = env.get("log") {
-        if let Data(log) = log {
-            if let Some(level) = log.get("level") {
-                if let Num(level) = level {
-                    if let Ok(mut logger) = LOGGER.lock() {
-                        let level = Level::from(*level as u32);
-                        logger.info(&format!{"log level set to {:?}", &level});
-                        logger.set_level(level);
-                    }
-                }
-            }
-            if let Some(out) = log.get("out") {
-                if let Data(out) = out {
-                    if let Some(path) = out.get("path") {
-                        if let Text(path) = path {
-                            let name = 
-                            if let Some(Text(val)) = out.get("name") {
-                               val
-                            } else {
-                               "simhttp-${0}"
-                            };
-
-                            LOGGER.lock().unwrap().set_output(LogFile::from(path,&name));
-                        }
+    if let Some(Data(log)) = env.get("log") {
+        if let Some(Data(out)) = log.get("out") {
+            if let Some(path) = out.get("path") {
+                if let Text(path) = path {
+                    let name = 
+                    if let Some(Text(val)) = out.get("name") {
+                       val
                     } else {
-                        LOGGER.lock().unwrap().set_output(LogFile::new());
-                    }
+                       "simhttp-${0}"
+                    };
+
+                    LOGGER.lock().unwrap().set_output(LogFile::from(path,&name));
                 }
-            }    
+            } else {
+                LOGGER.lock().unwrap().set_output(LogFile::new());
+            }
+        }
+        if let Some(Num(level)) = log.get("level") {
+            if let Ok(mut logger) = LOGGER.lock() {
+                let level = Level::from(*level as u32);
+                logger.info(&format!{"log level set to {:?}", &level});
+                logger.set_level(level);
+            }
         }
     }
-    let no_terminal = if let Some(val) = env.get("no terminal") {
-        if let Bool(val) = val {
-            val.to_owned()
-        } else {false } } else { false };
-    let Some(tp) = env.get("threads") else {
+    let no_terminal = if let Some(Bool(val)) = env.get("no terminal") {
+        val.to_owned() };
+    let Some(Num(tp)) = env.get("threads") else {
         eprintln!{"No number of threads configured"}
         return
     };
-    let Num(tp) = tp else {
-        eprintln!{"number of threads not a number"}
-        return
-    };
-    let Some(bind) = env.get("bind") else {
+    let Some(Text(bind)) = env.get("bind") else {
         eprintln!{"No bound addr is specified"}
         return
     };
-    let Text(bind) = bind else {
-        eprintln!{"No corect bind address configured"}
-        return
-    };
-    let Some(port) = env.get("port") else {
-        eprintln!{"No port number configured"}
-        return
-    };
-    let Num(port) = port else {
-        eprintln!{"Not a number port number configured"}
+    let Some(Num(port)) = env.get("port") else {
+        eprintln!{"No port number properly configured"}
         return
     };
     
-    let Some(mapping) = env.get("mapping") else {
-        eprintln!{"No mapping configured"}
-        return
-    };
-    let Arr(mapping) = mapping else {
-        eprintln!{"Incorrect mapping configured"}
+    let Some(Arr(mapping)) = env.get("mapping") else {
+        eprintln!{"No mapping properly  configured"}
         return
     };
     let mut mime2 = HashMap::new(); 
