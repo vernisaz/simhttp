@@ -81,11 +81,12 @@ fn main() {
                     if let Some(path) = out.get("path") {
                         if let Text(path) = path {
                             let name = 
-                            if let Some(name) = out.get("name") {
-                                if let Text(name) = name { name } else { "simhttp-${0}"}
+                            if let Some(Text(val)) = out.get("name") {
+                               val
                             } else {
-                                "simhttp-${0}"
+                               "simhttp-${0}"
                             };
+
                             LOGGER.lock().unwrap().set_output(LogFile::from(path,&name));
                         }
                     } else {
