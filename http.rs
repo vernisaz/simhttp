@@ -110,28 +110,22 @@ fn main() {
         return
     };
     let mut mime2 = HashMap::new(); 
-    if let Some(mime) = env.get("mime") {
-        if let Arr(mime) = mime {
-            for el in mime {
-                if let Data(el) = el {
-                    if let Some(en) = el.get("ext") {
-                        if let Text(en) = en {
-                            if let Some(val) = el.get("type") {
-                                if let Text(val) = val {
-                                    mime2.insert(en.to_string(),val.to_string());
-                                }
-                            }
-                        }
+    if let Some(Arr(mime)) = env.get("mime") {
+        for el in mime {
+            if let Data(el) = el {
+                if let Some(Text(en)) = el.get("ext") {
+                    if let Some(Text(typ)) = el.get("type") {
+                        mime2.insert(en.to_string(),typ.to_string());
                     }
                 }
-            } 
-        }
+            }
+        } 
     };
     init_mime(mime2);
     
     let tp = ThreadPool::new(*tp as usize);
 
-    let listener = TcpListener::bind(format!{"{bind}:{port}"}).unwrap();
+    let listener = TcpListener::bind(format!{"{bind}:{port}"}).expect("can't bind {bind} to {port}, probably is already in use");
     let stop = Arc::new(AtomicBool::new(false));
     let stop_one = stop.clone();
     init_mapping(read_mapping(mapping));
