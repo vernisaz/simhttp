@@ -868,29 +868,29 @@ impl CgiOut {
     }
 }
 
-fn parse_web_date(str: &str) -> Result<u64, &str> {
-    let (_,date) = str.split_once(", ").ok_or("week day name missed")?;
+fn parse_web_date(str: &str) -> Result<u64, std::num::ParseIntError> {
+    let fmt_err = "".parse::<u32>().expect_err("invalid format");
+    let (_,date) = str.split_once(", ").ok_or(fmt_err.clone())?;
     let mut parts = date.split(' ');
     let Some(day) = parts.next() else {
-        return Err("no day field")
+        return Err(fmt_err)
     } ;
-    // TODO replace unwp by error handling
     let day = day.parse::<u32>().unwrap();
     let Some(month) = parts.next() else {
-        return Err("no month field")
+        return Err(fmt_err)
     } ;
     let month = month.parse::<u32>().unwrap();
     let Some(year) = parts.next() else {
-        return Err("no year field")
+        return Err(fmt_err)
     } ;
     let year = year.parse::<u32>().unwrap();
     let Some(time) = parts.next() else {
-        return Err("no time field")
+        return Err(fmt_err)
     } ;
     let [h,m,s] = *time.splitn(3,':').collect::<Vec<_>>() else { todo!() };
-    let h = h.parse::<u64>().unwrap();
-    let m = m.parse::<u64>().unwrap();
-    let s = s.parse::<u64>().unwrap();
+    let h = h.parse::<u64>()?;
+    let m = m.parse::<u64>()?;
+    let s = s.parse::<u64>()?;
     Ok(seconds_from_epoch(year,month,day)+h*60*60+m*60+s)
 }
 
