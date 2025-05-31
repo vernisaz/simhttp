@@ -385,7 +385,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                     }
                     /*"location" => {
                     }*/
-                    "If-Modified-Since" => {
+                    "if-modified-since" => {
                         since = parse_web_date(val).unwrap_or(0)
                     }
                     &_ => () // all header collect somewhere
@@ -598,6 +598,18 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" {code_num} {}",
                            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis(), output.rest_len()})
                     } else {
+                        let modified = fs::metadata(&path_translated)?.modified()?;
+                        if since > 0 {
+                            if modified.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs() < since {
+                                let response =
+                                    format!("{protocol} 304 {}\r\n\r\n", response_message(304));
+                                stream.write_all(response.as_bytes())?;
+                                // log
+                                LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" 304 0", 
+                                    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()});
+                                return Ok(())    
+                            }
+                        }
                         let mut f = File::open(&path_translated)?;
                         let mut buffer = Vec::new();
                         let c_type =
@@ -609,8 +621,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         let c_type = if c_type.is_none() {
                             "octet-stream"
                         } else { c_type.unwrap() };
-                        let time = fs::metadata(&path_translated)?.modified()?;
-                        let time = http_format_time(time);
+                        let time = http_format_time(modified);
                         let length = buffer.len();
                         let response =
                             format!("{protocol} 200 OK\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\nLast-modified: {time}\r\n\r\n");
