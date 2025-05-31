@@ -866,22 +866,38 @@ impl CgiOut {
     }
 }
 
+// TODO move in simweb crate
+// TODO rename to toUTCString and fromUTCString
 fn parse_web_date(str: &str) -> Result<u64, std::num::ParseIntError> {
-    let fmt_err = "".parse::<u32>().expect_err("invalid format");
+    let fmt_err = "".parse::<u32>().expect_err("invalid format {str}");
     let (_,date) = str.split_once(", ").ok_or(fmt_err.clone())?;
     let mut parts = date.split(' ');
     let Some(day) = parts.next() else {
         return Err(fmt_err)
     } ;
-    let day = day.parse::<u32>().unwrap();
+    let day = day.parse::<u32>()?;
     let Some(month) = parts.next() else {
         return Err(fmt_err)
     } ;
-    let month = month.parse::<u32>().unwrap();
+    let month:u32 = match month {
+        "Jan" => 1,
+        "Feb" => 2,
+        "Mar" => 3, 
+        "Apr" => 4, 
+        "May" => 5, 
+        "Jun" => 6, 
+        "Jul" => 7, 
+        "Aug" => 8, 
+        "Sep" => 9, 
+        "Oct" => 10, 
+        "Nov" => 11, 
+        "Dec" => 12,
+        _ => return Err(fmt_err)
+    };
     let Some(year) = parts.next() else {
         return Err(fmt_err)
     } ;
-    let year = year.parse::<u32>().unwrap();
+    let year = year.parse::<u32>()?;
     let Some(time) = parts.next() else {
         return Err(fmt_err)
     } ;
