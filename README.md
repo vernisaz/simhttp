@@ -12,7 +12,7 @@ supporting the standard OS piping. Such approach is more beneficial than offered
 Although web applications can look not so slick as when used the Rocket. Since SimHttp uses a lose coupling approach when
 you do not need to rebuild the server for every case, it is more beneficial against such Rust servers as
 **hyper**. 
-O|bviosly SimHttp is CI/CD friendly.
+Obviosly SimHttp is CI/CD friendly.
 
 ## Building
 A RustBee script file is provided to build the server. There are 4 dependencies from the
@@ -33,4 +33,4 @@ Just execute its executable file. Press 'q' for stop. (See a note in the [issues
 The server provides a limited support of WebSocket protocol as WS-CGI.
 
 ## Status
-Current version is SimHTTP/1.11b36. It's a beta version.
+Current version is SimHTTP/1.12b41. It's a beta version.

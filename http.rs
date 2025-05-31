@@ -35,7 +35,7 @@ struct CgiOut {
     pos: usize,
 }
 
-const VERSION : &str = "SimHTTP/1.12b40";
+const VERSION : &str = "SimHTTP/1.12b41";
 
 static ERR404: &str = include_str!{"404.html"};
 
@@ -67,17 +67,15 @@ fn main() {
     };
     if let Some(Data(log)) = env.get("log") {
         if let Some(Data(out)) = log.get("out") {
-            if let Some(path) = out.get("path") {
-                if let Text(path) = path {
-                    let name = 
-                    if let Some(Text(val)) = out.get("name") {
-                       val
-                    } else {
-                       "simhttp-${0}"
-                    };
+            if let Some(Text(path)) = out.get("path") {
+                let name = 
+                if let Some(Text(val)) = out.get("name") {
+                   val
+                } else {
+                   "simhttp-${0}"
+                };
 
-                    LOGGER.lock().unwrap().set_output(LogFile::from(path,&name));
-                }
+                LOGGER.lock().unwrap().set_output(LogFile::from(path,&name))
             } else {
                 LOGGER.lock().unwrap().set_output(LogFile::new());
             }
