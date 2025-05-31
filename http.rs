@@ -35,7 +35,7 @@ struct CgiOut {
     pos: usize,
 }
 
-const VERSION : &str = "SimHTTP/1.12b39";
+const VERSION : &str = "SimHTTP/1.12b40";
 
 static ERR404: &str = include_str!{"404.html"};
 
@@ -147,7 +147,7 @@ fn main() {
         });
     }
     for stream in listener.incoming() {
-        let mut stream = stream.unwrap(); // TODO handle errors
+        let Ok(mut stream) = stream else {continue};
         let stop_two = stop.clone();
         
         tp.execute(move || {
@@ -169,7 +169,7 @@ fn main() {
                                     Ok(addr) => addr.to_string(),
                                     _ => "disconnected".to_string()
                                 };
-                            LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"??? ??? HTTP/1.1\" 500 {length}",
+                            LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"... ... HTTP/1.1\" 500 {length}",
                                 SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()});
                         } else {break}
                      } else { break}
@@ -274,6 +274,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
     }
     
     let mut content_len = 0_u64;
+    let mut since = 0_u64;
     let mut extra = None;
     let cgi_env = if cgi {
         let mut env : HashMap<String, String> = if preserve_env {
@@ -340,7 +341,9 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         }
                     }
                     "content-length" => { // read load 
-                        content_len = val.parse::<u64>().unwrap(); // TODO error handling
+                        if let Ok(len) = val.parse::<u64>() {
+                            content_len = len
+                        }
                         env.insert("CONTENT_LENGTH".to_string(), val.trim().to_string());
                     }
                     "content-type" => {
@@ -382,7 +385,10 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                     }
                     /*"location" => {
                     }*/
-                    &_ => ()
+                    "If-Modified-Since" => {
+                        since = parse_web_date(val).unwrap_or(0)
+                    }
+                    &_ => () // all header collect somewhere
                 }
             }
             
@@ -851,6 +857,47 @@ impl CgiOut {
     }
 }
 
+fn parse_web_date(str: &str) -> Result<u64, &str> {
+    let (_,date) = str.split_once(", ").ok_or("week day name missed")?;
+    let mut parts = date.split(' ');
+    let Some(day) = parts.next() else {
+        return Err("no day field")
+    } ;
+    // TODO replace unwp by error handling
+    let day = day.parse::<u32>().unwrap();
+    let Some(month) = parts.next() else {
+        return Err("no month field")
+    } ;
+    let month = month.parse::<u32>().unwrap();
+    let Some(year) = parts.next() else {
+        return Err("no year field")
+    } ;
+    let year = year.parse::<u32>().unwrap();
+    let Some(time) = parts.next() else {
+        return Err("no time field")
+    } ;
+    let [h,m,s] = *time.splitn(3,':').collect::<Vec<_>>() else { todo!() };
+    let h = h.parse::<u64>().unwrap();
+    let m = m.parse::<u64>().unwrap();
+    let s = s.parse::<u64>().unwrap();
+    Ok(seconds_from_epoch(year,month,day)+h*60*60+m*60+s)
+}
+
+// TODO use from simtime crate
+fn seconds_from_epoch(year: u32, month: u32, day: u32) -> u64 {
+    // Create a `SystemTime` instance for the given date
+    let date = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(
+        (year as u64 - 1970) * 31_556_952 + // seconds in a year
+        (month as u64 - 1) * (31_556_952 / 12) +    // seconds in a month (approx)
+        (day as u64 - 1) * 86_400           // seconds in a day
+    );
+
+    // Calculate the duration since the Unix epoch
+    let duration_since_epoch = date.duration_since(UNIX_EPOCH).expect("Time went backwards");
+
+    // Return the number of seconds
+    duration_since_epoch.as_secs()
+}
 
 /*fn read_n<R>(reader: R, bytes_to_read: u64) -> Vec<u8>
 where
