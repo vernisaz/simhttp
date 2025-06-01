@@ -150,9 +150,8 @@ fn main() {
         
         tp.execute(move || {
             loop {
-                
                 match handle_connection(&stream)  {
-                     Err(err) => if err.kind() != ErrorKind::BrokenPipe { 
+                     Err(err) => if err.kind() != ErrorKind::BrokenPipe && err.kind() != ErrorKind::ConnectionReset { 
                          LOGGER.lock().unwrap().error(&format!{"Err: {err}"});
                          // can do it only if response isn't commited
                          let contents = ERR404; // 500
@@ -196,6 +195,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
             LOGGER.lock().unwrap().error(&format!{"bad request {line}"})}
         return Err(Error::new(ErrorKind::BrokenPipe, "no data"))
     }
+    let mut close = false;
     line.truncate(len-2); // \r\n
     let request_line = line.clone();
     let mut parts  = request_line.splitn(3, ' '); // split_whitespace
@@ -371,25 +371,25 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
         }
         Some(env)
     } else { 
+        line.clear();
         while 2 < buf_reader.read_line(&mut line)? {
             line.truncate(line.len()-2); // \r\n
             //eprintln!{"header: {line}"}
             if let Some((key,val)) = line.split_once(": ") {
                  let key = key.to_lowercase();
-                let key = key.as_str();
-                match key {
+                match key.as_str() {
                     "content-length" => {  
                         content_len = val.parse::<u64>().unwrap_or(0); 
                     }
-                    /*"location" => {
-                    }*/
                     "if-modified-since" => {
                         since = parse_web_date(val).unwrap_or(0)
                     }
-                    &_ => () // all header collect somewhere
+                    "connection" => close = val != "keep-alive",
+                    "referer" | "user-agent" => LOGGER.lock().unwrap().trace(&format!("{key}: {val}")),
+                    &_ => () // all headers should be collected somewhere
                 }
             }
-            
+            line.clear();
         }
         if content_len > 0 {
             std::io::copy(&mut buf_reader.by_ref().take(content_len), &mut std::io::sink())?;
@@ -397,249 +397,253 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
         }
         None };
         
-        if method == "GET" || method == "POST" {
-           // eprintln!{"servicing {method} to {path_translated:?} {cgi} {websocket}"}
-            match path_translated {
-                Some(ref path_translated) if PathBuf::from(&path_translated).is_file() => {
-                    let path_translated = PathBuf::from(&path_translated);
-                    if cgi {
-                        let mut path_translated = path_translated.as_path().canonicalize().unwrap();
-                        if !path_translated.is_absolute() {
-                             path_translated = env::current_dir()?.join(path_translated)
-                        }
-                        if websocket {
-                            // https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API/Writing_WebSocket_servers
-                            // generate a respose first
-                            // it can be generate by WS CGI, but
-                            let cgi_env = cgi_env.unwrap();
-                            let key = &cgi_env.get("HTTP_SEC_WEBSOCKET_KEY").unwrap();
-                            let mut hasher = sha1::Sha1::new();
-                            let res = hasher.hash(format!("{key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11"));
-                            //eprintln!{"ws command {path_translated:?}"}
-                            let mut load = Command::new(&path_translated)
-                             .stdout(Stdio::piped())
-                             .stdin(Stdio::piped())
-                             .stderr(Stdio::piped())
-                             .current_dir(&path_translated.parent().unwrap())
-                             .env_clear() // can be a flag telling to purge system env or not
-                            .envs(cgi_env).spawn()?;
-                            
-                            let res = simweb::base64_encode_with_padding(&res);
-                            let mes = response_message(101);
-                            let response =
-                                format!("{protocol} 101 {mes}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {res}\r\n\r\n");
-                            stream.write_all(response.as_bytes())?;
-                            // log
-                            LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" 101 0",
-                                SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()});
-                            let mut reader_stream = stream;//.try_clone().unwrap();
-                            if let Some(mut stdin) = load.stdin.take() { // TODO rethink when WS CGI can't read
-                                thread::scope(|s| {
-                                    s.spawn(|| {
-                                    let mut buffer = [0_u8;MAX_LINE_LEN]; 
-                                    loop {
-                                        let len = match reader_stream.read(&mut buffer) {
-                                            Ok(len) => if len == 0 { break } else { len },
-                                            Err(_) => break,
-                                        };
-                                        //eprintln!("decolde {len}");
-                                        let (data,kind,_) = decode_block(&buffer[0..len]);
-                                        if kind != 1 { break } // currently support only UTF8 strings, no continuation
-                                        // TODO think how mark block size: 1. in from 4 chars len, or 2. end mark like 0x00
-                                        if stdin.write_all(&data.as_slice()).is_err() {break};
-
-                                        stdin.flush().unwrap();
-                                        //let string = String::from_utf8_lossy(&data);
-                                        //eprintln!("entered {string}");
-                                    }
-
-                                    match stdin.write_all(&[255_u8,255,255,4]) { // TODO consider also using 6 - Acknowledge
-                                        Ok(()) => stdin.flush().unwrap(),
-                                        
-                                        Err(_) => ()
-                                    }
-                                    //eprintln!("need to terminate endpoint!");
-                                });
-
-                                if let Some(stderr)  = load.stderr.take() {
-                                    s.spawn(|| {
-                                        let err = BufReader::new(stderr);
-                                        err.lines().for_each(|line|
-                                            LOGGER.lock().unwrap().error(&format!("err: {}", line.unwrap()))
-                                        );
-                                    }) ;
-                                }
-                                let mut writer_stream = stream;
-                                if let Some(mut stdout) = load.stdout.take() {
-                                    let mut buffer = [0_u8;MAX_LINE_LEN]; 
-                                    loop {
-                                        let Ok(len) = stdout.read(&mut buffer) else {
-                                            break
-                                        };
-                                        if len == 0 { break }
-                                        match writer_stream.write_all(encode_block(&buffer[0..len]).as_slice()) {
-                                            Err(_) => break,
-                                            _ => ()
-                                        }
-                                    }
-                                    match writer_stream.write_all(&[0x88,0]) {
-                                        _ => ()
-                                    }
-                                } else {eprintln!("no out");}
-                                });
-                            }
-                           
-                            load.wait().unwrap();
-                            return Err(Error::new(ErrorKind::Other, "Websocket closed"))
-                        }
+    if method == "GET" || method == "POST" {
+       // eprintln!{"servicing {method} to {path_translated:?} {cgi} {websocket}"}
+        match path_translated {
+            Some(ref path_translated) if PathBuf::from(&path_translated).is_file() => {
+                let path_translated = PathBuf::from(&path_translated);
+                if cgi {
+                    let mut path_translated = path_translated.as_path().canonicalize().unwrap();
+                    if !path_translated.is_absolute() {
+                         path_translated = env::current_dir()?.join(path_translated)
+                    }
+                    if websocket {
+                        // https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API/Writing_WebSocket_servers
+                        // generate a respose first
+                        // it can be generate by WS CGI, but
+                        let cgi_env = cgi_env.unwrap();
+                        let key = &cgi_env.get("HTTP_SEC_WEBSOCKET_KEY").unwrap();
+                        let mut hasher = sha1::Sha1::new();
+                        let res = hasher.hash(format!("{key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11"));
+                        //eprintln!{"ws command {path_translated:?}"}
                         let mut load = Command::new(&path_translated)
                          .stdout(Stdio::piped())
                          .stdin(Stdio::piped())
                          .stderr(Stdio::piped())
                          .current_dir(&path_translated.parent().unwrap())
-                         .env_clear()
-                        .envs(cgi_env.unwrap()).spawn()?;
-                        if let Some(extra) = extra {
-                            if let Some(mut stdin) = load.stdin.take() {
-                                thread::spawn(move || { // TODO consider using a separate thread pool
-                                    match stdin.write_all(&extra) {
-                                        Err(err) => LOGGER.lock().unwrap().error(&format!{"can't write to SGI script: {err}"}),
-                                        _=> () //eprintln!{"written: {}", String::from_utf8_lossy( &extra)}
-                                    }
-                                });
-                            }
-                        }
+                         .env_clear() // can be a flag telling to purge system env or not
+                        .envs(cgi_env).spawn()?;
                         
-                        let output = load.wait_with_output()?;
-                        let err = BufReader::new(&*output.stderr);
-                        err.lines().for_each(|line| {
-                            LOGGER.lock().unwrap().trace(& line.unwrap()); // maybe to do not lock for every line and do everything in batch?
-                        });
-                       // println!{"load {}", String::from_utf8_lossy( &output.stdout)}
-                        let mut output = CgiOut{load:output.stdout, pos:0};
-                        let mut code_num = 200;
-                        let status = output.next();
-                        if status.is_none() { // no headers
-                            let len = output.rest_len() ;
-                            stream.write_all(format!{"{protocol} 200 OK\r\nContent-Length: {len}\r\n\r\n"}.as_bytes())?;
-                            if len > 0 {
-                                stream.write_all(&output.rest()).unwrap()
+                        let res = simweb::base64_encode_with_padding(&res);
+                        let mes = response_message(101);
+                        let response =
+                            format!("{protocol} 101 {mes}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {res}\r\n\r\n");
+                        stream.write_all(response.as_bytes())?;
+                        // log
+                        LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" 101 0",
+                            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()});
+                        let mut reader_stream = stream;//.try_clone().unwrap();
+                        if let Some(mut stdin) = load.stdin.take() { // TODO rethink when WS CGI can't read
+                            thread::scope(|s| {
+                                s.spawn(|| {
+                                let mut buffer = [0_u8;MAX_LINE_LEN]; 
+                                loop {
+                                    let len = match reader_stream.read(&mut buffer) {
+                                        Ok(len) => if len == 0 { break } else { len },
+                                        Err(_) => break,
+                                    };
+                                    //eprintln!("decolde {len}");
+                                    let (data,kind,_) = decode_block(&buffer[0..len]);
+                                    if kind != 1 { break } // currently support only UTF8 strings, no continuation
+                                    // TODO think how mark block size: 1. in from 4 chars len, or 2. end mark like 0x00
+                                    if stdin.write_all(&data.as_slice()).is_err() {break};
+
+                                    stdin.flush().unwrap();
+                                    //let string = String::from_utf8_lossy(&data);
+                                    //eprintln!("entered {string}");
+                                }
+
+                                match stdin.write_all(&[255_u8,255,255,4]) { // TODO consider also using 6 - Acknowledge
+                                    Ok(()) => stdin.flush().unwrap(),
+                                    
+                                    Err(_) => ()
+                                }
+                                //eprintln!("need to terminate endpoint!");
+                            });
+
+                            if let Some(stderr)  = load.stderr.take() {
+                                s.spawn(|| {
+                                    let err = BufReader::new(stderr);
+                                    err.lines().for_each(|line|
+                                        LOGGER.lock().unwrap().error(&format!("err: {}", line.unwrap()))
+                                    );
+                                }) ;
                             }
-                        } else {
-                            let status = status.unwrap();
-                            let mut headers = String::new();
-                            // first line
-                            let mut status =
-                                if let Some((key,val)) = status.split_once(": ") {
-                                    let key = key.to_lowercase();
-                                    if key != "content-length" && key != "status" {
-                                        headers.push_str(&format!{"{status}\r\n"});
+                            let mut writer_stream = stream;
+                            if let Some(mut stdout) = load.stdout.take() {
+                                let mut buffer = [0_u8;MAX_LINE_LEN]; 
+                                loop {
+                                    let Ok(len) = stdout.read(&mut buffer) else {
+                                        break
+                                    };
+                                    if len == 0 { break }
+                                    match writer_stream.write_all(encode_block(&buffer[0..len]).as_slice()) {
+                                        Err(_) => break,
+                                        _ => ()
                                     }
-                                    if key == "location" {
-                                        code_num = 302;
-                                        format!{"{protocol} 302 Found\r\n"}
-                                    } else if key == "status" {
-                                        if let Some((code, _)) = val.split_once(" ") {
-                                            code_num = code.parse::<u16>().unwrap_or(200);
-                                            format!{"{protocol} {val}\r\n"}
-                                        } else {
-                                            code_num = val.parse::<u16>().unwrap_or(200);
-                                            let msg = response_message(code_num);
-                                            format!{"{protocol} {val} {msg}\r\n"}
-                                        }
+                                }
+                                match writer_stream.write_all(&[0x88,0]) {
+                                    _ => ()
+                                }
+                            } else {eprintln!("no out");}
+                            });
+                        }
+                       
+                        load.wait().unwrap();
+                        return Err(Error::new(ErrorKind::Other, "Websocket closed"))
+                    }
+                    let mut load = Command::new(&path_translated)
+                     .stdout(Stdio::piped())
+                     .stdin(Stdio::piped())
+                     .stderr(Stdio::piped())
+                     .current_dir(&path_translated.parent().unwrap())
+                     .env_clear()
+                    .envs(cgi_env.unwrap()).spawn()?;
+                    if let Some(extra) = extra {
+                        if let Some(mut stdin) = load.stdin.take() {
+                            thread::spawn(move || { // TODO consider using a separate thread pool
+                                match stdin.write_all(&extra) {
+                                    Err(err) => LOGGER.lock().unwrap().error(&format!{"can't write to SGI script: {err}"}),
+                                    _=> () //eprintln!{"written: {}", String::from_utf8_lossy( &extra)}
+                                }
+                            });
+                        }
+                    }
+                    
+                    let output = load.wait_with_output()?;
+                    let err = BufReader::new(&*output.stderr);
+                    err.lines().for_each(|line| {
+                        LOGGER.lock().unwrap().trace(& line.unwrap()); // maybe to do not lock for every line and do everything in batch?
+                    });
+                   // println!{"load {}", String::from_utf8_lossy( &output.stdout)}
+                    let mut output = CgiOut{load:output.stdout, pos:0};
+                    let mut code_num = 200;
+                    let status = output.next();
+                    if status.is_none() { // no headers
+                        let len = output.rest_len() ;
+                        stream.write_all(format!{"{protocol} 200 OK\r\nContent-Length: {len}\r\n\r\n"}.as_bytes())?;
+                        if len > 0 {
+                            stream.write_all(&output.rest()).unwrap()
+                        }
+                    } else {
+                        let status = status.unwrap();
+                        let mut headers = String::new();
+                        // first line
+                        let mut status =
+                            if let Some((key,val)) = status.split_once(": ") {
+                                let key = key.to_lowercase();
+                                if key != "content-length" && key != "status" {
+                                    headers.push_str(&format!{"{status}\r\n"});
+                                }
+                                if key == "location" {
+                                    code_num = 302;
+                                    format!{"{protocol} 302 Found\r\n"}
+                                } else if key == "status" {
+                                    if let Some((code, _)) = val.split_once(" ") {
+                                        code_num = code.parse::<u16>().unwrap_or(200);
+                                        format!{"{protocol} {val}\r\n"}
                                     } else {
-                                        format!{"{protocol} 200 OK\r\n"}
+                                        code_num = val.parse::<u16>().unwrap_or(200);
+                                        let msg = response_message(code_num);
+                                        format!{"{protocol} {val} {msg}\r\n"}
                                     }
                                 } else {
-                                    let (code, msg) = 
-                                    match status.split_once(' ') {
-                                        Some((code,msg)) => {
-                                            code_num = code.parse::<u16>().unwrap_or(200);
-                                            (code.to_string(),msg.to_string())
-                                        },
-                                        None => {
-                                            code_num = status.parse::<u16>().unwrap_or(200);
-                                            (status,response_message(code_num))
-                                        }
-                                    };
-                                    format!{"{protocol} {code} {msg}\r\n"}
-                                };
-                            
-                            while let Some(mut header)  = output.next() {
-                                header = header.trim().to_string(); // consider simple trunc(2)
-                                if let Some((key,val)) = header.split_once(": ") {
-                                    let key = key.to_lowercase();
-                                    if key == "location" {
-                                        code_num = 302;
-                                        status = format!{"{protocol} 302 Found\r\n"}
-                                    } else if key == "status" {
-                                        if let Some((code, _)) = val.split_once(" ") {
-                                            code_num = code.parse::<u16>().unwrap_or(200);
-                                            status = format!{"{protocol} {val}\r\n"}
-                                        }
-                                    }
-                                    if key != "content-length" && key != "status" {
-                                        headers.push_str(&format!{"{header}\r\n"})
-                                    } 
+                                    format!{"{protocol} 200 OK\r\n"}
                                 }
-                            }
-                            stream.write_all(status.as_bytes())?;
-                            stream.write_all(headers.as_bytes())?;
-                            let len = output.rest_len() ; // why not content-length ?
-                            //eprintln!{"{status}{headers}Content-Length: {len}"}
-                            stream.write_all(format!{"Content-Length: {len}\r\n\r\n"}.as_bytes())?;
-                            if len > 0 {
-                                stream.write_all(&output.rest())?;
-                                //eprintln!{"{:?}", String::from_utf8_lossy(&output.rest())}
+                            } else {
+                                let (code, msg) = 
+                                match status.split_once(' ') {
+                                    Some((code,msg)) => {
+                                        code_num = code.parse::<u16>().unwrap_or(200);
+                                        (code.to_string(),msg.to_string())
+                                    },
+                                    None => {
+                                        code_num = status.parse::<u16>().unwrap_or(200);
+                                        (status,response_message(code_num))
+                                    }
+                                };
+                                format!{"{protocol} {code} {msg}\r\n"}
+                            };
+                        
+                        while let Some(mut header)  = output.next() {
+                            header = header.trim().to_string(); // consider simple trunc(2)
+                            if let Some((key,val)) = header.split_once(": ") {
+                                let key = key.to_lowercase();
+                                if key == "location" {
+                                    code_num = 302;
+                                    status = format!{"{protocol} 302 Found\r\n"}
+                                } else if key == "status" {
+                                    if let Some((code, _)) = val.split_once(" ") {
+                                        code_num = code.parse::<u16>().unwrap_or(200);
+                                        status = format!{"{protocol} {val}\r\n"}
+                                    }
+                                }
+                                if key != "content-length" && key != "status" {
+                                    headers.push_str(&format!{"{header}\r\n"})
+                                } 
                             }
                         }
-                        LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" {code_num} {}",
-                           SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis(), output.rest_len()})
-                    } else {
-                        let modified = fs::metadata(&path_translated)?.modified()?;
-                        if since > 0 {
-                            if modified.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs() < since {
-                                let response =
-                                    format!("{protocol} 304 {}\r\n\r\n", response_message(304));
-                                stream.write_all(response.as_bytes())?;
-                                // log
-                                LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" 304 0", 
-                                    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()});
-                                return Ok(())    
-                            }
+                        stream.write_all(status.as_bytes())?;
+                        stream.write_all(headers.as_bytes())?;
+                        let len = output.rest_len() ; // why not content-length ?
+                        //eprintln!{"{status}{headers}Content-Length: {len}"}
+                        stream.write_all(format!{"Content-Length: {len}\r\n\r\n"}.as_bytes())?;
+                        if len > 0 {
+                            stream.write_all(&output.rest())?;
+                            //eprintln!{"{:?}", String::from_utf8_lossy(&output.rest())}
                         }
-                        let mut f = File::open(&path_translated)?;
-                        let mut buffer = Vec::new();
-                        let c_type =
-                        if let Some(ref ext) = path_translated. extension() {
-                            MIME.get().unwrap().get(ext.to_str().unwrap())
-                        } else {None};
-                        // read the whole file
-                        f.read_to_end(&mut buffer)?;
-                        let c_type = if c_type.is_none() {
-                            "octet-stream"
-                        } else { c_type.unwrap() };
-                        let time = http_format_time(modified);
-                        let length = buffer.len();
-                        let response =
-                            format!("{protocol} 200 OK\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\nLast-modified: {time}\r\n\r\n");
-                    
-                        stream.write_all(response.as_bytes())?;
-                        stream.write_all(&buffer)?;
-                        // log
-                        LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" 200 {length}", 
-                            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()})
                     }
-                }
-                _ => {
-                    report_error(404,&request_line, &mut stream)?
+                    LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" {code_num} {}",
+                       SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis(), output.rest_len()})
+                } else {
+                    let modified = fs::metadata(&path_translated)?.modified()?;
+                    if since > 0 {
+                        if modified.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs() < since {
+                            let response =
+                                format!("{protocol} 304 {}\r\n\r\n", response_message(304));
+                            stream.write_all(response.as_bytes())?;
+                            // log
+                            LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" 304 0", 
+                                SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()});
+                            return Ok(())    
+                        }
+                    }
+                    let mut f = File::open(&path_translated)?;
+                    let mut buffer = Vec::new();
+                    let c_type =
+                    if let Some(ref ext) = path_translated. extension() {
+                        MIME.get().unwrap().get(ext.to_str().unwrap())
+                    } else {None};
+                    // read the whole file
+                    f.read_to_end(&mut buffer)?;
+                    let c_type = if c_type.is_none() {
+                        "octet-stream"
+                    } else { c_type.unwrap() };
+                    let time = http_format_time(modified);
+                    let length = buffer.len();
+                    let response =
+                        format!("{protocol} 200 OK\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\nLast-modified: {time}\r\n\r\n");
+                
+                    stream.write_all(response.as_bytes())?;
+                    stream.write_all(&buffer)?;
+                    // log
+                    LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" 200 {length}", 
+                        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()})
                 }
             }
-        } else { // PUT DELETE HEAD TRACE OPTIONS PATCH CONNECT
-            // unsupported method
-            report_error(405,&request_line, &mut stream)?
+            _ => {
+                report_error(404,&request_line, &mut stream)?
+            }
         }
-    Ok(())
+    } else { // PUT DELETE HEAD TRACE OPTIONS PATCH CONNECT
+        // unsupported method
+        report_error(405,&request_line, &mut stream)?
+    }
+    if close {
+        Err(Error::new(ErrorKind::ConnectionReset, "requested close"))
+    } else {
+        Ok(())
+    }
 }
 
 fn read_mapping(mapping: &Vec<JsonData>) -> Vec<Mapping> {
