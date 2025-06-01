@@ -17,7 +17,7 @@ use std::{
 };
 use simtpool::ThreadPool;
 use simjson::JsonData::{Num,Text,Data,Arr,Bool,self};
-use simweb::http_format_time;
+use simweb::{http_format_time,parse_http_timestamp};
 mod log;
 use log::{Level,LogFile};
 mod sha1;
@@ -382,7 +382,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         content_len = val.parse::<u64>().unwrap_or(0); 
                     }
                     "if-modified-since" => {
-                        since = parse_web_date(val).unwrap_or(0)
+                        since = parse_http_timestamp(val).unwrap_or(0)
                     }
                     "connection" => close = val != "keep-alive",
                     "referer" | "user-agent" => LOGGER.lock().unwrap().trace(&format!("{key}: {val}")),
@@ -868,64 +868,6 @@ impl CgiOut {
     fn rest(&mut self) -> Vec<u8> {
         self.load[self.pos+1..].to_vec()
     }
-}
-
-// TODO move in simweb crate
-// TODO rename to toUTCString and fromUTCString
-fn parse_web_date(str: &str) -> Result<u64, std::num::ParseIntError> {
-    let fmt_err = "".parse::<u32>().expect_err("invalid format {str}");
-    let (_,date) = str.split_once(", ").ok_or(fmt_err.clone())?;
-    let mut parts = date.split(' ');
-    let Some(day) = parts.next() else {
-        return Err(fmt_err)
-    } ;
-    let day = day.parse::<u32>()?;
-    let Some(month) = parts.next() else {
-        return Err(fmt_err)
-    } ;
-    let month:u32 = match month {
-        "Jan" => 1,
-        "Feb" => 2,
-        "Mar" => 3, 
-        "Apr" => 4, 
-        "May" => 5, 
-        "Jun" => 6, 
-        "Jul" => 7, 
-        "Aug" => 8, 
-        "Sep" => 9, 
-        "Oct" => 10, 
-        "Nov" => 11, 
-        "Dec" => 12,
-        _ => return Err(fmt_err)
-    };
-    let Some(year) = parts.next() else {
-        return Err(fmt_err)
-    } ;
-    let year = year.parse::<u32>()?;
-    let Some(time) = parts.next() else {
-        return Err(fmt_err)
-    } ;
-    let [h,m,s] = *time.splitn(3,':').collect::<Vec<_>>() else { todo!() };
-    let h = h.parse::<u64>()?;
-    let m = m.parse::<u64>()?;
-    let s = s.parse::<u64>()?;
-    Ok(seconds_from_epoch(year,month,day)+h*60*60+m*60+s)
-}
-
-// TODO use from simtime crate
-fn seconds_from_epoch(year: u32, month: u32, day: u32) -> u64 {
-    // Create a `SystemTime` instance for the given date
-    let date = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(
-        (year as u64 - 1970) * 31_556_952 + // seconds in a year
-        (month as u64 - 1) * (31_556_952 / 12) +    // seconds in a month (approx)
-        (day as u64 - 1) * 86_400           // seconds in a day
-    );
-
-    // Calculate the duration since the Unix epoch
-    let duration_since_epoch = date.duration_since(UNIX_EPOCH).expect("Time went backwards");
-
-    // Return the number of seconds
-    duration_since_epoch.as_secs()
 }
 
 /*fn read_n<R>(reader: R, bytes_to_read: u64) -> Vec<u8>
