@@ -35,7 +35,7 @@ struct CgiOut {
     pos: usize,
 }
 
-const VERSION : &str = "SimHTTP/1.12b41";
+const VERSION : &str = "SimHTTP/1.12b42";
 
 static ERR404: &str = include_str!{"404.html"};
 
@@ -559,7 +559,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     },
                                     None => {
                                         code_num = status.parse::<u16>().unwrap_or(200);
-                                        (status,response_message(code_num))
+                                        (status,response_message(code_num).to_string())
                                     }
                                 };
                                 format!{"{protocol} {code} {msg}\r\n"}
@@ -772,7 +772,7 @@ fn decode_block(input: &[u8]) -> (Vec<u8>, u8, bool) {
     (res, op, last)
 }
 
-fn response_message(code: u16) -> String {
+fn response_message(code: u16) -> &'static str {
     match code {
         100 => "Continue",
         101 => "Switching Protocols",
@@ -836,7 +836,7 @@ fn response_message(code: u16) -> String {
         510 => "Not Extended",
         511 => "Network Authentication Required",
         _ => "Unknown",
-    }.to_string()
+    }
 }
 
 impl CgiOut {

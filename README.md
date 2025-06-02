@@ -16,18 +16,21 @@ Obviosly SimHttp is CI/CD friendly.
 
 ## Building
 A RustBee script file is provided to build the server. There are 4 dependencies from the
-micro libraries crates pool. They should be cloned and built first.
+micro libraries (crate) pool. They should be cloned and built first.
 - [RightSlash](https://github.com/vernisaz/right_slash)
 - [SimJSON](https://github.com/vernisaz/simjson)
 - [SimThreadPool](https://github.com/vernisaz/simtpool)
-- [SimWEb](https://github.com/vernisaz/simweb) 
+- [SimWEb](https://github.com/vernisaz/simweb) -> requires [SimTime](https://github.com/vernisaz/simtime)
+
+The directory where all *rlib* resides has to be specified in *crate_dir* variable of
+[bee.7b](https://github.com/vernisaz/simhttp/blob/master/bee.7b) script.
 
 ## Configuring
 One JSON file is used for configuring the server. The file has to be in the same directory as the server.
 The configuration syntax is a self describing. 
 
 ## Running
-Just execute its executable file. Press 'q' for stop. (See a note in the [issues](https://github.com/vernisaz/simhttp/blob/master/issues.md))
+Just launch **simhttp**. Press 'q' for stop. (See a note in the [issues](https://github.com/vernisaz/simhttp/blob/master/issues.md))
 
 ## Websocket
 The server provides a limited support of WebSocket protocol as WS-CGI.
