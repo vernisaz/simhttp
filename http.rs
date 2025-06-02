@@ -751,22 +751,23 @@ fn decode_block(input: &[u8]) -> (Vec<u8>, u8, bool) {
           (input[6] as u64)<<24 | (input[4] as u64)<<32 | (input[4] as u64)<<40 | (input[3] as u64)<<48 | (input[2] as u64)<<56, 10_usize),
         128_u8..=u8::MAX => unreachable!()
     };
-    
-    let mask = if masked {
-        [input[shift],input[shift+1],input[shift+2],input[shift+3]]
-    } else {
-        [0,0,0,0]
-    };
-    if masked {
-        shift += 4
-    }
     let mut res = Vec::new ();
-    let len = cmp::min(shift+(len as usize),input.len( ));
-    //eprintln!("payload len {len} {masked} {shift}");
-    let mut curr_mask = 0;
-    for i in shift..len {
-        res.push(input[i] ^ mask[curr_mask]);
-        curr_mask = (curr_mask + 1) % 4
+    if len > 0 {
+        let mask = if masked {
+            [input[shift],input[shift+1],input[shift+2],input[shift+3]]
+        } else {
+            [0,0,0,0]
+        };
+        if masked {
+            shift += 4
+        }
+        let len = cmp::min(shift+(len as usize),input.len( ));
+        //eprintln!("payload len {len} {masked} {shift}");
+        let mut curr_mask = 0;
+        for i in shift..len {
+            res.push(input[i] ^ mask[curr_mask]);
+            curr_mask = (curr_mask + 1) % 4
+        }
     }
     (res, op, last)
 }
