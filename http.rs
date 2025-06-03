@@ -461,6 +461,8 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     
                                     Err(_) => ()
                                 }
+                                // forsibly kill at websocket disconnection
+                                // load..kill().expect("command couldn't be killed");
                                 //eprintln!("need to terminate endpoint!");
                             });
 
