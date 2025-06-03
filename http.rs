@@ -47,6 +47,8 @@ static MAPPING: OnceLock<Vec<Mapping>> = OnceLock::new();
 
 const MAX_LINE_LEN : usize = 4096;
 
+const PARSE_NUM_ERR : u16 = 501;
+
 fn init_mime(mime: HashMap<String,String>) {
     MIME.set(mime).unwrap();
 }
@@ -539,11 +541,11 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     code_num = 302;
                                     format!{"{protocol} 302 Found\r\n"}
                                 } else if key == "status" {
-                                    if let Some((code, _)) = val.split_once(" ") {
-                                        code_num = code.parse::<u16>().unwrap_or(200);
+                                    if let Some((code, _)) = val.split_once(' ') {
+                                        code_num = code.parse::<u16>().unwrap_or(PARSE_NUM_ERR);
                                         format!{"{protocol} {val}\r\n"}
                                     } else {
-                                        code_num = val.parse::<u16>().unwrap_or(200);
+                                        code_num = val.parse::<u16>().unwrap_or(PARSE_NUM_ERR);
                                         let msg = response_message(code_num);
                                         format!{"{protocol} {val} {msg}\r\n"}
                                     }
@@ -554,11 +556,11 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 let (code, msg) = 
                                 match status.split_once(' ') {
                                     Some((code,msg)) => {
-                                        code_num = code.parse::<u16>().unwrap_or(200);
+                                        code_num = code.parse::<u16>().unwrap_or(PARSE_NUM_ERR);
                                         (code.to_string(),msg.to_string())
                                     },
                                     None => {
-                                        code_num = status.parse::<u16>().unwrap_or(200);
+                                        code_num = status.parse::<u16>().unwrap_or(PARSE_NUM_ERR);
                                         (status,response_message(code_num).to_string())
                                     }
                                 };
@@ -573,8 +575,8 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     code_num = 302;
                                     status = format!{"{protocol} 302 Found\r\n"}
                                 } else if key == "status" {
-                                    if let Some((code, _)) = val.split_once(" ") {
-                                        code_num = code.parse::<u16>().unwrap_or(200);
+                                    if let Some((code, _)) = val.split_once(' ') {
+                                        code_num = code.parse::<u16>().unwrap_or(PARSE_NUM_ERR); // should reject the request if status code unparsable
                                         status = format!{"{protocol} {val}\r\n"}
                                     }
                                 }
