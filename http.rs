@@ -35,7 +35,7 @@ struct CgiOut {
     pos: usize,
 }
 
-const VERSION : &str = "SimHTTP/1.12b42";
+const VERSION : &str = "SimHTTP/1.12b43";
 
 static ERR404: &str = include_str!{"404.html"};
 
@@ -754,10 +754,10 @@ fn decode_block(input: &[u8]) -> (Vec<u8>, u8, bool) {
     let (len, mut shift) = 
     match input[1] & 0x7f {
         len @ 0..=125 => (len as u64, 2_usize),
-        126 => if total_len > 8 {(input[2] as u64 | (input[3] as u64) << 8, 4_usize)} else {(0u64,0usize)},
+        126 => if total_len > 8 {(input[2] as u64 | (input[3] as u64) << 8, 4_usize)} else {(0u64,total_len)},
         127 => if total_len > 14 {(input[9] as u64 | (input[8] as u64)<<8 | (input[7] as u64)<<16 |
           (input[6] as u64)<<24 | (input[4] as u64)<<32 | (input[4] as u64)<<40 | (input[3] as u64)<<48 | (input[2] as u64)<<56, 10_usize)}
-          else {(0u64,0usize)},
+          else {(0u64,total_len)},
         128_u8..=u8::MAX => unreachable!(),
     };
     
