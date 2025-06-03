@@ -26,8 +26,8 @@ The directory where all *rlib* resides has to be specified in *crate_dir* variab
 [bee.7b](https://github.com/vernisaz/simhttp/blob/master/bee.7b) script.
 
 ## Configuring
-One JSON file is used for configuring the server. The file has to be in the same directory as the server.
-The configuration syntax is a self describing. 
+One JSON file is used for configuring the server. The file has to be in the same directory as the server executable.
+An example of [config](https://github.com/vernisaz/simhttp/blob/master/env.conf) file is self describing. 
 
 ## Running
 Just launch **simhttp**. Press 'q' for stop. (See a note in the [issues](https://github.com/vernisaz/simhttp/blob/master/issues.md))
@@ -36,4 +36,4 @@ Just launch **simhttp**. Press 'q' for stop. (See a note in the [issues](https:/
 The server provides a limited support of WebSocket protocol as WS-CGI.
 
 ## Status
-Current version is SimHTTP/1.12b41. It's a beta version.
+Current version is SimHTTP/1.12b42. It's a beta version.
