@@ -742,19 +742,26 @@ fn encode_block(input: &[u8]) -> Vec<u8> {
 }
 
 fn decode_block(input: &[u8]) -> (Vec<u8>, u8, bool) {
+    let total_len = input.len();
+    let mut res = Vec::new ();
+    if total_len < 2 {
+        return (res, 0, true)
+    }
     let last = input[0] & 0x80 == 0x80;
     let op = input[0] & 0x0f;
     let masked = input[1] & 0x80 == 0x80;
+    
     let (len, mut shift) = 
     match input[1] & 0x7f {
         len @ 0..=125 => (len as u64, 2_usize),
-        126 => (input[2] as u64 | (input[3] as u64) << 8, 4_usize),
-        127 => (input[9] as u64 | (input[8] as u64)<<8 | (input[7] as u64)<<16 |
-          (input[6] as u64)<<24 | (input[4] as u64)<<32 | (input[4] as u64)<<40 | (input[3] as u64)<<48 | (input[2] as u64)<<56, 10_usize),
-        128_u8..=u8::MAX => unreachable!()
+        126 => if total_len > 8 {(input[2] as u64 | (input[3] as u64) << 8, 4_usize)} else {(0u64,0usize)},
+        127 => if total_len > 14 {(input[9] as u64 | (input[8] as u64)<<8 | (input[7] as u64)<<16 |
+          (input[6] as u64)<<24 | (input[4] as u64)<<32 | (input[4] as u64)<<40 | (input[3] as u64)<<48 | (input[2] as u64)<<56, 10_usize)}
+          else {(0u64,0usize)},
+        128_u8..=u8::MAX => unreachable!(),
     };
-    let mut res = Vec::new ();
-    if len > 0 {
+    
+    if len > 0 && total_len > shift + 4  {
         let mask = if masked {
             [input[shift],input[shift+1],input[shift+2],input[shift+3]]
         } else {
@@ -763,7 +770,7 @@ fn decode_block(input: &[u8]) -> (Vec<u8>, u8, bool) {
         if masked {
             shift += 4
         }
-        let len = cmp::min(shift+(len as usize),input.len( ));
+        let len = cmp::min(shift+(len as usize),total_len);
         //eprintln!("payload len {len} {masked} {shift}");
         let mut curr_mask = 0;
         for i in shift..len {
