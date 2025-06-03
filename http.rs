@@ -447,6 +447,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     //eprintln!("decolde {len}");
                                     let (data,kind,_) = decode_block(&buffer[0..len]);
                                     if kind != 1 { break } // currently support only UTF8 strings, no continuation
+                                    if data.len() == 0 { break } // socket close
                                     // TODO think how mark block size: 1. in from 4 chars len, or 2. end mark like 0x00
                                     if stdin.write_all(&data.as_slice()).is_err() {break};
 
@@ -744,6 +745,7 @@ fn encode_block(input: &[u8]) -> Vec<u8> {
 fn decode_block(input: &[u8]) -> (Vec<u8>, u8, bool) {
     let total_len = input.len();
     let mut res = Vec::new ();
+    res.reserve(total_len);
     if total_len < 2 {
         return (res, 0, true)
     }
