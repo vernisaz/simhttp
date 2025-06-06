@@ -14,6 +14,9 @@ you do not need to rebuild the server for every case, it is more beneficial agai
 **hyper**. 
 Obviosly SimHttp is CI/CD friendly.
 
+The server is perfectly suitable for embedded development. You can deploy it on an embeded platform. CGI endoints can be
+developed in C or Rust.
+
 ## Building
 A RustBee script file is provided to build the server. There are 4 dependencies from the
 micro libraries (crate) pool. They should be cloned and built first.
@@ -36,4 +39,4 @@ Just launch **simhttp**. Press 'q' for stop. (See a note in the [issues](https:/
 The server provides a limited support of WebSocket protocol as WS-CGI.
 
 ## Status
-Current version is SimHTTP/1.12b42. It's a beta version.
+Current version is SimHTTP/1.12b43. It's a beta version.
