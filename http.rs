@@ -35,7 +35,7 @@ struct CgiOut {
     pos: usize,
 }
 
-const VERSION : &str = "SimHTTP/1.12b43";
+const VERSION : &str = "SimHTTP/1.12b44";
 
 static ERR404: &str = include_str!{"404.html"};
 
@@ -194,7 +194,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
     let len = buf_reader.read_line(&mut line)?;
     if len < 10 { // http/1.x ...
         if len > 0 {
-            LOGGER.lock().unwrap().error(&format!{"bad request {line}"})}
+            LOGGER.lock().unwrap().error(&format!{"bad request {}", to_hex(line.as_bytes())})}
         return Err(Error::new(ErrorKind::BrokenPipe, "no data"))
     }
     let mut close = false;
@@ -884,6 +884,12 @@ impl CgiOut {
     }
 }
 
+fn to_hex(line: &[u8]) -> String {
+    let mut s = String::new();
+    use std::fmt::Write as FmtWrite; // renaming import to avoid collision
+    for b in line { write!(s, "{:02x}", b).unwrap(); }
+    s
+}
 /*fn read_n<R>(reader: R, bytes_to_read: u64) -> Vec<u8>
 where
     R: Read,
