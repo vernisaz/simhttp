@@ -194,7 +194,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
     let len = buf_reader.read_line(&mut line)?;
     if len < 10 { // http/1.x ...
         if len > 0 {
-            LOGGER.lock().unwrap().error(&format!{"bad request {}", to_hex(line.as_bytes())})}
+            LOGGER.lock().unwrap().error(&format!{"bad request {}", simweb::to_hex(line.as_bytes())})}
         return Err(Error::new(ErrorKind::BrokenPipe, "no data"))
     }
     let mut close = false;
@@ -446,7 +446,9 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     };
                                     //eprintln!("decolde {len}");
                                     let (data,kind,_) = decode_block(&buffer[0..len]);
-                                    if kind != 1 { break } // currently support only UTF8 strings, no continuation
+                                    if kind != 1 { 
+                                        eprintln!("block {kind} not supported yet {data:?}");
+                                        break } // currently support only UTF8 strings, no continuation
                                     if data.len() == 0 { break } // socket close
                                     // TODO think how mark block size: 1. in from 4 chars len, or 2. end mark like 0x00
                                     if stdin.write_all(&data.as_slice()).is_err() {break};
@@ -884,12 +886,6 @@ impl CgiOut {
     }
 }
 
-fn to_hex(line: &[u8]) -> String {
-    let mut s = String::new();
-    use std::fmt::Write as FmtWrite; // renaming import to avoid collision
-    for b in line { write!(s, "{:02x}", b).unwrap(); }
-    s
-}
 /*fn read_n<R>(reader: R, bytes_to_read: u64) -> Vec<u8>
 where
     R: Read,
