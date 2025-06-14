@@ -447,7 +447,13 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     //eprintln!("decolde {len}");
                                     let (data,kind,_) = decode_block(&buffer[0..len]);
                                     if kind != 1 { 
-                                        eprintln!("block {kind} not supported yet {data:?}");
+                                        if kind == 0x9 // ping
+                                           || kind == 0xA { // pong 
+                                               continue // ignore for now
+                                        }
+                                        if kind != 8 {
+                                            eprintln!("block {kind} not supported yet {data:?}");
+                                        } // otherwise close op
                                         break } // currently support only UTF8 strings, no continuation
                                     if data.len() == 0 { break } // socket close
                                     // TODO think how mark block size: 1. in from 4 chars len, or 2. end mark like 0x00
