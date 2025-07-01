@@ -45,7 +45,7 @@ static MIME: OnceLock<HashMap<String,String>> = OnceLock::new();
 
 static MAPPING: OnceLock<Vec<Mapping>> = OnceLock::new();
 
-const MAX_LINE_LEN : usize = 4096;
+const MAX_LINE_LEN : usize = 256*1024;
 
 const PARSE_NUM_ERR : u16 = 501;
 
@@ -470,7 +470,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     Err(_) => ()
                                 }
                                 // forsibly kill at websocket disconnection
-                                // load..kill().expect("command couldn't be killed");
+                                // load.kill().expect("command couldn't be killed");
                                 //eprintln!("need to terminate endpoint!");
                             });
 
@@ -486,6 +486,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             if let Some(mut stdout) = load.stdout.take() {
                                 let mut buffer = [0_u8;MAX_LINE_LEN]; 
                                 loop {
+                                    // TODO investigate why separation on chunks out breaks WS send
                                     let Ok(len) = stdout.read(&mut buffer) else {
                                         break
                                     };
@@ -717,7 +718,7 @@ fn report_error(code: u16, request_line: &str, mut stream: &TcpStream) -> io::Re
     Ok(())
 }
 
-fn encode_block(input: &[u8]) -> Vec<u8> {
+fn encode_block(input: &[u8]) -> Vec<u8> { // TODO add param - last block
     let len = input.len();
     //eprintln!("encoding bl {len}");
     let mut res = vec![];
@@ -727,12 +728,12 @@ fn encode_block(input: &[u8]) -> Vec<u8> {
         1..126 => {
             res.push(len as u8); // not masked
         }
-        126..0xffffffff_u64 => { // u16::MAX
+        126..0x10000_u64 => { // u16::MAX
             res.push(126 as u8); // not masked
             res.push((len >> 8) as u8);
             res.push((len & 255) as u8);
         }
-        0xffffffff_u64..=u64::MAX => {
+        0x10000_u64..=u64::MAX => {
             res.push(127 as u8); // not masked
             res.push((len >> 56 & 255) as u8);
             res.push((len >> 48 & 255) as u8);
