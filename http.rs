@@ -13,7 +13,6 @@ use std::{
     process::{Stdio,Command},
     time::{SystemTime,UNIX_EPOCH},
     env,
-    cmp,
 };
 use simtpool::ThreadPool;
 use simjson::JsonData::{Num,Text,Data,Arr,Bool,self};
@@ -439,13 +438,13 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             thread::scope(|s| {
                                 s.spawn(|| {
                                 let mut buffer = [0_u8;MAX_LINE_LEN]; 
-                                loop {
+                                'serv_ep: loop {
                                     let len = match reader_stream.read(&mut buffer) {
                                         Ok(len) => if len == 0 { break } else { len },
                                         Err(_) => break,
                                     };
                                     //eprintln!("decolde {len}");
-                                    let (data,kind,_) = decode_block(&buffer[0..len]);
+                                    let (mut data,kind,_,mut extra,mask,mut mask_pos) = decode_block(&buffer[0..len]);
                                     if kind != 1 { 
                                         if kind == 0x9 // ping
                                            || kind == 0xA { // pong 
@@ -456,9 +455,26 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         } // otherwise close op
                                         break } // currently support only UTF8 strings, no continuation
                                     if data.len() == 0 { break } // socket close
+                                    while extra > 0 {
+                                        //eprintln!("reading {extra}");
+                                        let len = match reader_stream.read(&mut buffer) {
+                                            Ok(len) => if len == 0 { break 'serv_ep} else { len },
+                                            Err(_) => break 'serv_ep,
+                                        };
+                                        //eprintln!("read only {len}");
+                                        for i in 0..len {
+                                            extra -= 1;
+                                            data.push(buffer[i] ^ mask[mask_pos]);
+                                            mask_pos = (mask_pos + 1) % 4;
+                                            /*if extra == 0 {
+                                                eprintln!("there are additional bytes {}", len-1);
+                                                break
+                                            }*/
+                                        }
+                                    }
+                                    //eprintln!("all done");
                                     // TODO think how mark block size: 1. in from 4 chars len, or 2. end mark like 0x00
                                     if stdin.write_all(&data.as_slice()).is_err() {break};
-
                                     stdin.flush().unwrap();
                                     //let string = String::from_utf8_lossy(&data);
                                     //eprintln!("entered {string}");
@@ -469,7 +485,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     
                                     Err(_) => ()
                                 }
-                                // forsibly kill at websocket disconnection
+                                // forsibly kill the endpoint at a websocket disconnection
                                 // load.kill().expect("command couldn't be killed");
                                 //eprintln!("need to terminate endpoint!");
                             });
@@ -753,45 +769,54 @@ fn encode_block(input: &[u8]) -> Vec<u8> { // TODO add param - last block
     res
 }
 
-fn decode_block(input: &[u8]) -> (Vec<u8>, u8, bool) {
+fn decode_block(input: &[u8]) -> (Vec<u8>, u8, bool,u64,[u8;4],usize) {
     let total_len = input.len();
     let mut res = Vec::new ();
     res.reserve(total_len);
     if total_len < 2 {
-        return (res, 0, true)
+        return (res, 0, true,0,[0,0,0,0],0usize)
     }
     let last = input[0] & 0x80 == 0x80;
     let op = input[0] & 0x0f;
     let masked = input[1] & 0x80 == 0x80;
-    
+    /*if input[1] & 0x7f == 126 {
+        eprintln!("len {:x} {:x}", input[2],input[3])
+    }*/
     let (len, mut shift) = 
     match input[1] & 0x7f {
         len @ 0..=125 => (len as u64, 2_usize),
-        126 => if total_len > 8 {(input[2] as u64 | (input[3] as u64) << 8, 4_usize)} else {(0u64,total_len)},
+        126 => if total_len > 8 {((input[3] & 255) as u64 | (input[2] as u64) << 8, 4_usize)} else {(0u64,total_len)},
         127 => if total_len > 14 {(input[9] as u64 | (input[8] as u64)<<8 | (input[7] as u64)<<16 |
-          (input[6] as u64)<<24 | (input[4] as u64)<<32 | (input[4] as u64)<<40 | (input[3] as u64)<<48 | (input[2] as u64)<<56, 10_usize)}
+          (input[6] as u64)<<24 | (input[4] as u64)<<32 | (input[4] as u64)<<40 | (input[3] as u64)<<48 | (input[2] as u64)<<56,
+          10_usize)}
           else {(0u64,total_len)},
         128_u8..=u8::MAX => unreachable!(),
     };
-    
-    if len > 0 && total_len > shift + 4  {
-        let mask = if masked {
+    let mut curr_mask = 0;
+    let mask = if masked && total_len > shift + 4 {
             [input[shift],input[shift+1],input[shift+2],input[shift+3]]
         } else {
             [0,0,0,0]
         };
-        if masked {
-            shift += 4
-        }
-        let len = cmp::min(shift+(len as usize),total_len);
-        //eprintln!("payload len {len} {masked} {shift}");
-        let mut curr_mask = 0;
-        for i in shift..len {
+    if masked {
+        shift += 4
+    }
+    let extra =
+        if shift+(len as usize) > total_len {
+            //eprintln!("buffer len {total_len} lesser then required {len} plus {shift}");
+            len - (total_len - shift) as u64
+        } else {
+            //eprintln!("buffer len {total_len} >= {len} + {shift}");
+            0
+        };
+
+    if len > 0 && total_len > shift  {
+        for i in shift..total_len {
             res.push(input[i] ^ mask[curr_mask]);
             curr_mask = (curr_mask + 1) % 4
         }
     }
-    (res, op, last)
+    (res, op, last, extra,mask,curr_mask)
 }
 
 fn response_message(code: u16) -> &'static str {
