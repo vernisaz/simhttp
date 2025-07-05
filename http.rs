@@ -751,15 +751,13 @@ fn encode_block(input: &[u8]) -> Vec<u8> { // TODO add param - last block
         }
         0x10000_u64..=u64::MAX => {
             res.push(127 as u8); // not masked
-            #[allow(arithmetic_overflow)]
+            #[cfg(target_pointer_width = "64")]
+            {
             res.push((len >> 56 & 255) as u8);
-            #[allow(arithmetic_overflow)]
             res.push((len >> 48 & 255) as u8);
-            #[allow(arithmetic_overflow)]
             res.push((len >> 40 & 255) as u8);
-            #[allow(arithmetic_overflow)]
             res.push((len >> 32 & 255) as u8);
-            
+            }
             res.push((len >> 24 & 255) as u8);
             res.push((len >> 16 & 255) as u8);
             res.push((len >> 8 & 255) as u8);
