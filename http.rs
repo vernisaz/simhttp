@@ -433,6 +433,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         // log
                         LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" 101 0",
                             SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()});
+                        let _ = stream.set_read_timeout(None);
                         let mut reader_stream = stream;//.try_clone().unwrap();
                         if let Some(mut stdin) = load.stdin.take() { // TODO rethink when WS CGI can't read
                             thread::scope(|s| {
