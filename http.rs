@@ -11,7 +11,7 @@ use std::{
     path::{MAIN_SEPARATOR_STR,PathBuf},
     collections::HashMap,
     process::{Stdio,Command},
-    time::{SystemTime,UNIX_EPOCH},
+    time::{SystemTime,UNIX_EPOCH,Duration},
     env,
 };
 use simtpool::ThreadPool;
@@ -128,7 +128,7 @@ fn main() {
     let stop = Arc::new(AtomicBool::new(false));
     let stop_one = stop.clone();
     init_mapping(read_mapping(mapping));
-    LOGGER.lock().unwrap().info(&format!{"Server started at {bind}:{port}"});
+    LOGGER.lock().unwrap().info(&format!{"Server started fot {bind}:{port}"});
     let stop_listener = listener.try_clone().unwrap();
     if !no_terminal {
        thread::spawn(move || {
@@ -148,7 +148,7 @@ fn main() {
     for stream in listener.incoming() {
         let Ok(mut stream) = stream else {continue};
         let stop_two = stop.clone();
-        
+        let _ = stream.set_read_timeout(Some(Duration::from_secs(60*10)));
         tp.execute(move || {
             loop {
                 match handle_connection(&stream)  {
