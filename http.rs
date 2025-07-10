@@ -773,10 +773,10 @@ fn encode_block(input: &[u8]) -> Vec<u8> { // TODO add param - last block
 }
 
 fn decode_block(input: &[u8]) -> (Vec<u8>, u8, bool,u64,[u8;4],usize) {
-    let total_len = input.len();
+    let buf_len = input.len();
     let mut res = Vec::new ();
-    res.reserve(total_len);
-    if total_len < 2 {
+    res.reserve(buf_len);
+    if buf_len < 2 {
         return (res, 0, true,0,[0,0,0,0],0usize)
     }
     let last = input[0] & 0x80 == 0x80;
@@ -788,15 +788,15 @@ fn decode_block(input: &[u8]) -> (Vec<u8>, u8, bool,u64,[u8;4],usize) {
     let (len, mut shift) = 
     match input[1] & 0x7f {
         len @ 0..=125 => (len as u64, 2_usize),
-        126 => if total_len > 8 {((input[3] & 255) as u64 | (input[2] as u64) << 8, 4_usize)} else {(0u64,total_len)},
-        127 => if total_len > 14 {(input[9] as u64 | (input[8] as u64)<<8 | (input[7] as u64)<<16 |
+        126 => if buf_len > 8 {((input[3] & 255) as u64 | (input[2] as u64) << 8, 4_usize)} else {(0u64,buf_len)},
+        127 => if buf_len > 14 {(input[9] as u64 | (input[8] as u64)<<8 | (input[7] as u64)<<16 |
           (input[6] as u64)<<24 | (input[4] as u64)<<32 | (input[4] as u64)<<40 | (input[3] as u64)<<48 | (input[2] as u64)<<56,
           10_usize)}
-          else {(0u64,total_len)},
+          else {(0u64,buf_len)},
         128_u8..=u8::MAX => unreachable!(),
     };
     let mut curr_mask = 0;
-    let mask = if masked && total_len > shift + 4 {
+    let mask = if masked && buf_len > shift + 4 {
             [input[shift],input[shift+1],input[shift+2],input[shift+3]]
         } else {
             [0,0,0,0]
@@ -805,16 +805,20 @@ fn decode_block(input: &[u8]) -> (Vec<u8>, u8, bool,u64,[u8;4],usize) {
         shift += 4
     }
     let extra =
-        if shift+(len as usize) > total_len {
+        if shift+(len as usize) > buf_len {
             //eprintln!("buffer len {total_len} lesser then required {len} plus {shift}");
-            len - (total_len - shift) as u64
+            if shift > buf_len {
+                // TODO the algorithm should be reconsidered
+                return (res, 0, true,0,[0,0,0,0],0usize)
+            }
+            len - (buf_len - shift) as u64
         } else {
             //eprintln!("buffer len {total_len} >= {len} + {shift}");
             0
         };
 
-    if len > 0 && total_len > shift  {
-        for i in shift..total_len {
+    if len > 0 && buf_len > shift  {
+        for i in shift..buf_len {
             res.push(input[i] ^ mask[curr_mask]);
             curr_mask = (curr_mask + 1) % 4
         }
