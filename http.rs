@@ -148,9 +148,10 @@ fn main() {
     for stream in listener.incoming() {
         let Ok(mut stream) = stream else {continue};
         let stop_two = stop.clone();
-        let _ = stream.set_read_timeout(Some(Duration::from_secs(60*10)));
         tp.execute(move || {
             loop {
+                let _ = stream.set_read_timeout(Some(Duration::from_secs(60*10)));
+                // timeout can be reset at handling long polls
                 match handle_connection(&stream)  {
                      Err(err) => if err.kind() != ErrorKind::BrokenPipe && err.kind() != ErrorKind::ConnectionReset { 
                          LOGGER.lock().unwrap().error(&format!{"Err: {err}"});
@@ -540,7 +541,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             });
                         }
                     }
-                    
+                    let _ = stream.set_read_timeout(None);
                     let output = load.wait_with_output()?;
                     let err = BufReader::new(&*output.stderr);
                     err.lines().for_each(|line| {
