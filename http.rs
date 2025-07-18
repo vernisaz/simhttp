@@ -34,7 +34,7 @@ struct CgiOut {
     pos: usize,
 }
 
-const VERSION : &str = "SimHTTP/1.12b45";
+const VERSION : &str = "SimHTTP/1.12b46";
 
 static ERR404: &str = include_str!{"404.html"};
 
@@ -44,7 +44,7 @@ static MIME: OnceLock<HashMap<String,String>> = OnceLock::new();
 
 static MAPPING: OnceLock<Vec<Mapping>> = OnceLock::new();
 
-const MAX_LINE_LEN : usize = 256*1024;
+const MAX_LINE_LEN : usize = 64*1024;
 
 const PARSE_NUM_ERR : u16 = 501;
 
@@ -759,6 +759,15 @@ fn encode_block(input: &[u8]) -> Vec<u8> { // TODO add param - last block
             res.push((len >> 48 & 255) as u8);
             res.push((len >> 40 & 255) as u8);
             res.push((len >> 32 & 255) as u8);
+            }
+             #[cfg(target_pointer_width = "32")]
+            {
+            // a right solution will be split a big portion on smaller parts and send them
+            // as a chain of messages, but this isn't problem for 32 bit architecture
+            res.push(0u8);
+            res.push(0u8);
+            res.push(0u8);
+            res.push(0u8);
             }
             res.push((len >> 24 & 255) as u8);
             res.push((len >> 16 & 255) as u8);
