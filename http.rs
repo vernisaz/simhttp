@@ -34,7 +34,7 @@ struct CgiOut {
     pos: usize,
 }
 
-const VERSION : &str = "SimHTTP/1.12b46";
+const VERSION : &str = "SimHTTP/1.12b47";
 
 static ERR404: &str = include_str!{"404.html"};
 
@@ -436,71 +436,73 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()});
                         let _ = stream.set_read_timeout(None);
                         let mut reader_stream = stream;//.try_clone().unwrap();
-                        let mut stdin = load.stdin.take().unwrap();
+                        let mut stdin = load.stdin.take().unwrap(); // TODO can be no stdin endpoint just sending out some info, or for example file content
                         let stderr  = load.stderr.take().unwrap();
                         let mut stdout = load.stdout.take() .unwrap();
                         thread::scope(|s| {
                             s.spawn(|| {
-                            let mut buffer = [0_u8;MAX_LINE_LEN]; 
-                            'serv_ep: loop {
-                                let len = match reader_stream.read(&mut buffer) {
-                                    Ok(len) => if len == 0 { break } else { len },
-                                    Err(_) => break,
-                                };
-                                //eprintln!("decolde {len}");
-                                let (mut data,kind,_,mut extra,mask,mut mask_pos) = decode_block(&buffer[0..len]);
-                                if kind != 1 { 
-                                    if kind == 0x9 // ping
-                                       || kind == 0xA { // pong 
-                                           continue // ignore for now
-                                    }
-                                    if kind != 8 {
-                                        eprintln!("block {kind} not supported yet {data:?}");
-                                    } // otherwise close op
-                                    break } // currently support only UTF8 strings, no continuation
-                                if data.len() == 0 { break } // socket close
-                                while extra > 0 {
-                                    //eprintln!("reading {extra}");
+                                let mut buffer = [0_u8;MAX_LINE_LEN]; 
+                                'serv_ep: loop {
                                     let len = match reader_stream.read(&mut buffer) {
-                                        Ok(len) => if len == 0 { break 'serv_ep} else { len },
-                                        Err(_) => break 'serv_ep,
+                                        Ok(len) => if len == 0 { break } else { len },
+                                        Err(_) => break,
                                     };
-                                    //eprintln!("read only {len}");
-                                    for i in 0..len {
-                                        extra -= 1;
-                                        data.push(buffer[i] ^ mask[mask_pos]);
-                                        mask_pos = (mask_pos + 1) % 4;
-                                        /*if extra == 0 {
-                                            eprintln!("there are additional bytes {}", len-1);
-                                            break
-                                        }*/
+                                    //eprintln!("decolde {len}");
+                                    let (mut data,kind,_,mut extra,mask,mut mask_pos) = decode_block(&buffer[0..len]);
+                                    
+                                    if kind != 1 { 
+                                        if kind == 0x9 // ping
+                                           || kind == 0xA { // pong 
+                                               continue // ignore for now
+                                        }
+                                        if kind != 8 {
+                                            eprintln!("block {kind} not supported yet {data:?}");
+                                        } // otherwise close op
+                                        break } // currently support only UTF8 strings, no continuation or binary data
+                                        
+                                    if data.len() == 0 { break } // socket close
+                                    while extra > 0 {
+                                        //eprintln!("reading {extra}");
+                                        let len = match reader_stream.read(&mut buffer) {
+                                            Ok(len) => if len == 0 { break 'serv_ep} else { len },
+                                            Err(_) => break 'serv_ep,
+                                        };
+                                        //eprintln!("read only {len}");
+                                        for i in 0..len {
+                                            extra -= 1;
+                                            data.push(buffer[i] ^ mask[mask_pos]);
+                                            mask_pos = (mask_pos + 1) % 4;
+                                            /*if extra == 0 {
+                                                eprintln!("there are additional bytes {}", len-1);
+                                                break
+                                            }*/
+                                        }
                                     }
+                                    //eprintln!("all done");
+                                    // TODO think how pass a block size to endpoint as: 1. in from 4 chars len, or 2. end mark like 0x00
+                                    if stdin.write_all(&data.as_slice()).is_err() {break};
+                                    stdin.flush().unwrap();
+                                    //let string = String::from_utf8_lossy(&data);
+                                    //eprintln!("entered {string}");
                                 }
-                                //eprintln!("all done");
-                                // TODO think how mark block size: 1. in from 4 chars len, or 2. end mark like 0x00
-                                if stdin.write_all(&data.as_slice()).is_err() {break};
-                                stdin.flush().unwrap();
-                                //let string = String::from_utf8_lossy(&data);
-                                //eprintln!("entered {string}");
-                            }
-
-                            match stdin.write_all(&[255_u8,255,255,4]) { // TODO consider also using 6 - Acknowledge
-                                Ok(()) => stdin.flush().unwrap(),
-                                
-                                Err(_) => ()
-                            }
-                            // forsibly kill the endpoint at a websocket disconnection
-                            load.kill().expect("command couldn't be killed");
-                            //eprintln!("need to terminate endpoint!");
-                        });
-                        s.spawn(|| {
-                            let err = BufReader::new(stderr);
-                            err.lines().for_each(|line|
-                                LOGGER.lock().unwrap().error(&format!("err: {}", line.unwrap()))
-                            );
-                        }) ;
-                        let mut writer_stream = stream;
-                        
+    
+                                match stdin.write_all(&[255_u8,255,255,4]) { // TODO consider also using 6 - Acknowledge
+                                    Ok(()) => stdin.flush().unwrap(),
+                                    Err(_) => ()
+                                }
+                                // forsibly kill the endpoint at a websocket disconnection
+                                load.kill().expect("command couldn't be killed");
+                                //eprintln!("need to terminate endpoint! Killed?");
+                            });
+                            // stderr
+                            s.spawn(|| {
+                                let err = BufReader::new(stderr);
+                                err.lines().for_each(|line|
+                                    LOGGER.lock().unwrap().error(&format!("err: {}", line.unwrap()))
+                                );
+                            }) ;
+                            
+                            let mut writer_stream = stream;
                             let mut buffer = [0_u8;MAX_LINE_LEN]; 
                             loop {
                                 // TODO investigate why separation on chunks out breaks WS send
