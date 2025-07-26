@@ -38,5 +38,10 @@ Just launch **simhttp**. Press 'q' for stop. (See a note in the [issues](https:/
 ## Websocket
 The server provides a limited support of WebSocket protocol as WS-CGI.
 
+## How to compare it to miniserve
+If you didn't check [miniserve](https://github.com/svenstaro/miniserve/tree/master) yet, then do it now. More likely you will be satisfied with it.
+_miniserve_ reminds me [TJWS](https://tjws.sf.net) I implemented in the last century. Major difference of the _TRWS_ that it can be extended by CGI scripts
+and CGI websocket endpoints.
+
 ## Status
-Current version is SimHTTP/1.12b43. It's a beta version.
+Current version is SimHTTP/1.12b47. It's a beta version.
