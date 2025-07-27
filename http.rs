@@ -34,7 +34,7 @@ struct CgiOut {
     pos: usize,
 }
 
-const VERSION : &str = "SimHTTP/1.12b47";
+const VERSION : &str = "SimHTTP/1.12b48";
 
 static ERR404: &str = include_str!{"404.html"};
 
@@ -178,7 +178,7 @@ fn main() {
         });
         if stop.load(Ordering::SeqCst) { break }
     }
-    println!("Stopping the server...");
+    LOGGER.lock().unwrap().info("Stopping the server...");
     drop(tp)
 }
 
