@@ -85,10 +85,10 @@ impl LogFile {
         let file = File::create(path).expect("can't create log");
     
         LogFile { currnet_line: 0,
-        current_chunk: 0,
-        path: None,
-        name: name,
-        file: file,
+            current_chunk: 0,
+            path: None,
+            name: name,
+            file: file,
         }
     }
     
@@ -104,10 +104,10 @@ impl LogFile {
         let file = File::create(log_path).expect("can't create log");
     
         LogFile { currnet_line: 0,
-        current_chunk: 0,
-        path: Some(path),
-        name: name,
-        file: file,
+            current_chunk: 0,
+            path: Some(path),
+            name: name,
+            file: file,
         }
     }
     

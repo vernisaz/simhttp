@@ -154,14 +154,14 @@ fn main() {
                 // timeout can be reset at handling long polls
                 match handle_connection(&stream)  {
                      Err(err) => if err.kind() != ErrorKind::BrokenPipe && err.kind() != ErrorKind::ConnectionReset { 
-                         LOGGER.lock().unwrap().error(&format!{"Err: {err}"});
+                         LOGGER.lock().unwrap().error(&format!{"Err: {err} - in handling a request"});
                          // can do it only if response isn't commited
                          let contents = ERR404; // 500
                          let contents = contents.as_bytes();
                          let length = contents.len();
                          let c_type = "text/html";
                          
-                        if stream.write_all(format!("HTTP/1.1 500 INTERNAL SERVER ERROR\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\n\r\n").as_bytes()).is_ok() {
+                        if stream.write_all(format!("HTTP/1.1 500 {}\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\n\r\n", response_message(500)).as_bytes()).is_ok() {
                             if stream.write_all(&contents).is_err() { break }
                             let addr =
                                 match stream.peer_addr() {
@@ -194,7 +194,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
     let len = buf_reader.read_line(&mut line)?;
     if len < 10 { // http/1.x ...
         if len > 0 {
-            LOGGER.lock().unwrap().error(&format!{"bad request {}", simweb::to_hex(line.as_bytes())})}
+            LOGGER.lock().unwrap().error(&format!{"bad request 0x{}", simweb::to_hex(line.as_bytes())})}
         return Err(Error::new(ErrorKind::BrokenPipe, "no data"))
     }
     let mut close = false;
@@ -520,7 +520,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             }
                         });
                         load.wait().unwrap();
-                        return Err(Error::new(ErrorKind::Other, "Websocket closed"))
+                        return Err(Error::new(ErrorKind::BrokenPipe, "Websocket closed")) // force to close the connection and don't try to reuse
                     }
                     let mut load = Command::new(&path_translated)
                      .stdout(Stdio::piped())
