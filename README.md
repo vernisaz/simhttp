@@ -35,6 +35,25 @@ An example of [config](https://github.com/vernisaz/simhttp/blob/master/env.conf)
 ## Running
 Just launch **simhttp**. Press 'q' for stop. (See a note in the [issues](https://github.com/vernisaz/simhttp/blob/master/issues.md))
 
+If you run _simhttp_ in a *SSH* session and want to keep it running after the session gets closed, then use:
+
+> nohup simhttp &
+
+or as an alternative, run
+
+> screen
+
+and then,
+
+- Run _simhttp_: within the screen session.
+- Detach the screen session: Press Ctrl-A then Ctrl-D.
+- Log out: of the SSH session.
+- Reattach the screen session: later:
+
+> screen -r
+
+*tmux* can be also used similarly to the _screen_.
+
 ## Websocket
 The server provides a limited support of WebSocket protocol as WS-CGI.
 
