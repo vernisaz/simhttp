@@ -456,7 +456,8 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                                continue // ignore for now
                                         }
                                         if kind != 8 {
-                                            eprintln!("block {kind} not supported yet {data:?}");
+                                            LOGGER.lock().unwrap().error(&format!("block {kind} not supported yet {data:?}"));
+                                            continue
                                         } // otherwise close op
                                         break } // currently support only UTF8 strings, no continuation or binary data
                                         
