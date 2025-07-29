@@ -34,7 +34,7 @@ struct CgiOut {
     pos: usize,
 }
 
-const VERSION : &str = "SimHTTP/1.12b48";
+const VERSION : &str = "SimHTTP/1.20b50";
 
 static ERR404: &str = include_str!{"404.html"};
 
