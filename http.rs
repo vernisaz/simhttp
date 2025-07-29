@@ -451,6 +451,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     let mut complete = false;
                                     let mut kind = 0u8;
                                     let mut fin_data = vec![];
+                                    // TODO incorporate all logic in this while to decode_block and hide the mask exposing
                                     while !complete {
                                         let (mut data,bl_kind,last,mut extra,mask,mut mask_pos) = decode_block(&buffer[0..len]);
                                         if data.len() == 0 { break 'serv_ep} // socket close, can be 0 for ping?
