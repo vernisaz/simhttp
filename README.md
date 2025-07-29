@@ -54,6 +54,9 @@ and then,
 
 *tmux* can be also used similarly to the _screen_.
 
+You can also specify `"no terminal": true'` in _.conf_ file, and then launch the _simhttp_
+with ending `&`. But the server will be less verbosive in the case.
+
 ## Websocket
 The server provides a limited support of WebSocket protocol as WS-CGI.
 
