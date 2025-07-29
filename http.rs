@@ -34,7 +34,15 @@ struct CgiOut {
     pos: usize,
 }
 
-const VERSION : &str = "SimHTTP/1.20b50";
+macro_rules! debug {
+    ($($rest:tt)*) => {
+        if !NO_TERMINAL.get().unwrap() {
+            std::eprintln!($($rest)*)
+        }
+    }
+}
+
+const VERSION : &str = "SimHTTP/1.20b51";
 
 static ERR404: &str = include_str!{"404.html"};
 
@@ -43,6 +51,8 @@ static LOGGER : LazyLock<Mutex<log::SimLogger>> = LazyLock::new(|| Mutex::new(lo
 static MIME: OnceLock<HashMap<String,String>> = OnceLock::new();
 
 static MAPPING: OnceLock<Vec<Mapping>> = OnceLock::new();
+
+static NO_TERMINAL : OnceLock<bool> = OnceLock::new();
 
 const MAX_LINE_LEN : usize = 64*1024;
 
@@ -54,6 +64,10 @@ fn init_mime(mime: HashMap<String,String>) {
 
 fn init_mapping(mapping: Vec<Mapping>) {
     MAPPING.set(mapping).unwrap()
+}
+
+fn init_terminal(no_terminal: bool) -> () {
+    NO_TERMINAL.set(no_terminal).unwrap()
 }
 
 fn main() {
@@ -91,6 +105,8 @@ fn main() {
     }
     let no_terminal = if let Some(Bool(val)) = env.get("no terminal") {
          val.to_owned()} else {false};
+    init_terminal(no_terminal);
+    // TODO if a terminal is there, then can do debug printout on it bypassing log
     let Some(Num(tp)) = env.get("threads") else {
         eprintln!{"No number of threads configured"}
         return
@@ -443,16 +459,17 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             s.spawn(|| {
                                 let mut buffer = [0_u8;MAX_LINE_LEN]; 
                                 'serv_ep: loop {
-                                    let len = match reader_stream.read(&mut buffer) {
-                                        Ok(len) => if len == 0 { break } else { len },
-                                        Err(_) => break,
-                                    };
-                                    //eprintln!("decolde {len}");
                                     let mut complete = false;
                                     let mut kind = 0u8;
                                     let mut fin_data = vec![];
                                     // TODO incorporate all logic in this while to decode_block and hide the mask exposing
+                                    //. TODO use a global buffer to put data there and then read blocks from
                                     while !complete {
+                                         let len = match reader_stream.read(&mut buffer) {
+                                            Ok(len) => if len == 0 { break } else { len },
+                                            Err(_) => break 'serv_ep,
+                                        };
+                                        debug!("decolde {len}");
                                         let (mut data,bl_kind,last,mut extra,mask,mut mask_pos) = decode_block(&buffer[0..len]);
                                         if data.len() == 0 { break 'serv_ep} // socket close, can be 0 for ping?
                                         
