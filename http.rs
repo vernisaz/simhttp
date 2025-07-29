@@ -448,40 +448,49 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         Err(_) => break,
                                     };
                                     //eprintln!("decolde {len}");
-                                    let (mut data,kind,_,mut extra,mask,mut mask_pos) = decode_block(&buffer[0..len]);
-                                    
+                                    let mut complete = false;
+                                    let mut kind = 0u8;
+                                    let mut fin_data = vec![];
+                                    while !complete {
+                                        let (mut data,bl_kind,last,mut extra,mask,mut mask_pos) = decode_block(&buffer[0..len]);
+                                        if data.len() == 0 { break 'serv_ep} // socket close, can be 0 for ping?
+                                        
+                                        while extra > 0 {
+                                            //eprintln!("reading {extra}");
+                                            let len = match reader_stream.read(&mut buffer) {
+                                                Ok(len) => if len == 0 { break 'serv_ep} else { len },
+                                                Err(_) => break 'serv_ep,
+                                            };
+                                            //eprintln!("read only {len}");
+                                            for i in 0..len {
+                                                extra -= 1;
+                                                data.push(buffer[i] ^ mask[mask_pos]);
+                                                mask_pos = (mask_pos + 1) % 4;
+                                                /*if extra == 0 {
+                                                    eprintln!("there are additional bytes {}", len-1);
+                                                    break
+                                                }*/
+                                            }
+                                        }
+                                        if kind == 0 {
+                                            kind = bl_kind;
+                                        }
+                                        complete = last;
+                                        fin_data.append(&mut data);
+                                    }
                                     if kind != 1 { 
                                         if kind == 0x9 // ping
                                            || kind == 0xA { // pong 
                                                continue // ignore for now
                                         }
                                         if kind != 8 {
-                                            LOGGER.lock().unwrap().error(&format!("block {kind} not supported yet {data:?}"));
+                                            LOGGER.lock().unwrap().error(&format!("block {kind} not supported yet {fin_data:?}"));
                                             continue
                                         } // otherwise close op
                                         break } // currently support only UTF8 strings, no continuation or binary data
-                                        
-                                    if data.len() == 0 { break } // socket close
-                                    while extra > 0 {
-                                        //eprintln!("reading {extra}");
-                                        let len = match reader_stream.read(&mut buffer) {
-                                            Ok(len) => if len == 0 { break 'serv_ep} else { len },
-                                            Err(_) => break 'serv_ep,
-                                        };
-                                        //eprintln!("read only {len}");
-                                        for i in 0..len {
-                                            extra -= 1;
-                                            data.push(buffer[i] ^ mask[mask_pos]);
-                                            mask_pos = (mask_pos + 1) % 4;
-                                            /*if extra == 0 {
-                                                eprintln!("there are additional bytes {}", len-1);
-                                                break
-                                            }*/
-                                        }
-                                    }
                                     //eprintln!("all done");
                                     // TODO think how pass a block size to endpoint as: 1. in from 4 chars len, or 2. end mark like 0x00
-                                    if stdin.write_all(&data.as_slice()).is_err() {break};
+                                    if stdin.write_all(&fin_data.as_slice()).is_err() {break};
                                     stdin.flush().unwrap();
                                     //let string = String::from_utf8_lossy(&data);
                                     //eprintln!("entered {string}");
