@@ -4,4 +4,11 @@ common =../simscript/comm-build.7b:file
 crate_dir=../crates
 comp opts=[]
 #
+mode=mode:prop
+if {
+	eq(mode,release) then {
+		array(-C,opt-level=3)
+		assign(comp opts, ~~)
+	}
+}
 include(common);
