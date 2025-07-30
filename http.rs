@@ -466,7 +466,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     //. TODO use a global buffer to put data there and then read blocks from
                                     while !complete {
                                          let len = match reader_stream.read(&mut buffer) {
-                                            Ok(len) => if len == 0 { break } else { len },
+                                            Ok(len) => if len == 0 { break 'serv_ep} else { len },
                                             Err(_) => break 'serv_ep,
                                         };
                                         debug!("decolde {len}");
