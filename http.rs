@@ -469,7 +469,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                             Ok(len) => if len == 0 { break } else { len },
                                             Err(_) => break 'serv_ep,
                                         };
-                                        debug!("decolde {len}");
+                                        debug!("decode bl of {len}");
                                         let (mut data,bl_kind,last,mut extra,mask,mut mask_pos) = decode_block(&buffer[0..len]);
                                         if data.len() == 0 { break 'serv_ep} // socket close, can be 0 for ping?
                                         
@@ -814,7 +814,7 @@ fn decode_block(input: &[u8]) -> (Vec<u8>, u8, bool,u64,[u8;4],usize) {
     let mut res = Vec::new ();
     res.reserve(buf_len);
     if buf_len < 2 {
-        return (res, 0, true,0,[0,0,0,0],0usize)
+        return (res, 3, true,0,[0,0,0,0],0usize)
     }
     let last = input[0] & 0x80 == 0x80;
     let op = input[0] & 0x0f;
