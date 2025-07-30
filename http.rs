@@ -490,6 +490,8 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                                 }*/
                                             }
                                         }
+                                        // TODO - remaining can be copied in begining of buffer usinh
+                                        // https://doc.rust-lang.org/std/primitive.slice.html#method.copy_within
                                         if kind == 0 {
                                             kind = bl_kind;
                                         }
