@@ -474,11 +474,12 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         if data.len() == 0 { break 'serv_ep} // socket close, can be 0 for ping?
                                         
                                         while extra > 0 {
-                                            //eprintln!("reading {extra}");
+                                            
                                             let len = match reader_stream.read(&mut buffer) {
                                                 Ok(len) => if len == 0 { break 'serv_ep} else { len },
                                                 Err(_) => break 'serv_ep,
                                             };
+                                            debug!("incomplete bl requires reading {extra} more, currently {len}");
                                             //eprintln!("read only {len}");
                                             for i in 0..len {
                                                 extra -= 1;
@@ -490,7 +491,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                                 }*/
                                             }
                                         }
-                                        // TODO - remaining can be copied in begining of buffer usinh
+                                        // TODO - not consumed in the last block  can be copied in begining of buffer using
                                         // https://doc.rust-lang.org/std/primitive.slice.html#method.copy_within
                                         if kind == 0 {
                                             kind = bl_kind;
