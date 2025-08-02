@@ -8,11 +8,12 @@ However an interest to Java dropped recent years, so I decided to use Rust for a
 
 TRWS - is a successor of TJWS, but instead of servlets it runs CGI web applications which can be written in
 any language including Rust. It also supports websocket endpoints. They can be applications
-supporting the standard OS piping. Such approach is more beneficial than offered by *Rocket A web framework for Rust gear Rust*. 
-Although web applications can look not so slick as when used the Rocket. Since SimHttp uses a loose coupling approach when
-you do not need to rebuild the server for every case, it is more beneficial against such Rust servers as
-**hyper**. 
+supporting the standard OS piping. Such approach is more beneficial than offered by other
+Rust web servers, because doesn't require to rebuild the entire server at every servced app change. 
+
 Obviosly SimHttp is CI/CD friendly.
+
+A serviced Rust app can run as in CLI mode as in a web mode without any change.
 
 The server is perfectly suitable for embedded development. You can deploy it on an embeded platform. CGI endpoints can be
 developed in C or Rust.
