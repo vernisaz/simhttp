@@ -12,7 +12,7 @@ use std::{
     collections::HashMap,
     process::{Stdio,Command},
     time::{SystemTime,UNIX_EPOCH,Duration},
-    env,
+    env, convert::TryInto
 };
 use simtpool::ThreadPool;
 use simjson::JsonData::{Num,Text,Data,Arr,Bool,self};
@@ -829,9 +829,7 @@ fn decode_block(input: &[u8]) -> (Vec<u8>, u8, bool,u64,[u8;4],usize) {
     match input[1] & 0x7f {
         len @ 0..=125 => (len as u64, 2_usize),
         126 => if buf_len > 8 {((input[3] & 255) as u64 | (input[2] as u64) << 8, 4_usize)} else {(0u64,buf_len)},
-        127 => if buf_len > 14 {(input[9] as u64 | (input[8] as u64)<<8 | (input[7] as u64)<<16 |
-          (input[6] as u64)<<24 | (input[4] as u64)<<32 | (input[4] as u64)<<40 | (input[3] as u64)<<48 | (input[2] as u64)<<56,
-          10_usize)}
+        127 => if buf_len > 14 {(u64::from_be_bytes(input[2..10].try_into().unwrap()), 10_usize)}
           else {(0u64,buf_len)},
         128_u8..=u8::MAX => unreachable!(),
     };
