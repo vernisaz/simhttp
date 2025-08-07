@@ -777,31 +777,11 @@ fn encode_block(input: &[u8]) -> Vec<u8> { // TODO add param - last block
         }
         126..0x10000_u64 => { // u16::MAX
             res.push(126 as u8); // not masked
-            res.push((len >> 8) as u8);
-            res.push((len & 255) as u8);
+            res.extend_from_slice(&(len as u16).to_be_bytes())
         }
         0x10000_u64..=u64::MAX => {
             res.push(127 as u8); // not masked
-            #[cfg(target_pointer_width = "64")]
-            {
-            res.push((len >> 56 & 255) as u8);
-            res.push((len >> 48 & 255) as u8);
-            res.push((len >> 40 & 255) as u8);
-            res.push((len >> 32 & 255) as u8);
-            }
-             #[cfg(target_pointer_width = "32")]
-            {
-            // a right solution will be split a big portion on smaller parts and send them
-            // as a chain of messages, but this isn't problem for 32 bit architecture
-            res.push(0u8);
-            res.push(0u8);
-            res.push(0u8);
-            res.push(0u8);
-            }
-            res.push((len >> 24 & 255) as u8);
-            res.push((len >> 16 & 255) as u8);
-            res.push((len >> 8 & 255) as u8);
-            res.push((len & 255) as u8);
+            res.extend_from_slice(&(len as u64).to_be_bytes())
         }
         _ => unreachable!("wrong {}", len) // 0 is filtered out to do not call the method
     }
@@ -828,7 +808,7 @@ fn decode_block(input: &[u8]) -> (Vec<u8>, u8, bool,u64,[u8;4],usize) {
     let (len, mut shift) = 
     match input[1] & 0x7f {
         len @ 0..=125 => (len as u64, 2_usize),
-        126 => if buf_len > 8 {((input[3] & 255) as u64 | (input[2] as u64) << 8, 4_usize)} else {(0u64,buf_len)},
+        126 => if buf_len > 8 {(u16::from_be_bytes(input[2..4].try_into().unwrap()) as u64, 4_usize)} else {(0u64,buf_len)},
         127 => if buf_len > 14 {(u64::from_be_bytes(input[2..10].try_into().unwrap()), 10_usize)}
           else {(0u64,buf_len)},
         128_u8..=u8::MAX => unreachable!(),
