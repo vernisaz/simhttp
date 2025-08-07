@@ -42,7 +42,7 @@ macro_rules! debug {
     }
 }
 
-const VERSION : &str = "SimHTTP/1.20b51";
+const VERSION : &str = env!("VERSION");
 
 static ERR404: &str = include_str!{"404.html"};
 

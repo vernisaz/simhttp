@@ -3,6 +3,9 @@ main=http
 common =../simscript/comm-build.7b:file
 crate_dir=../crates
 comp opts=[]
+
+set_env(VERSION,SimHTTP/1.20b52)
+
 #
 mode=mode:prop
 if {
