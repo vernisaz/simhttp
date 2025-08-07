@@ -80,6 +80,7 @@ target package {
 <body>
     <header><h1>Rust HTTP Server</h1></header>
     <main>
+      <p>Congratulations! You've successfully installed the server</p>
     </main>
     <footer>&copy; <script>document.write(new Date().getFullYear())</script> D Rogatkin</footer>
 </body>
