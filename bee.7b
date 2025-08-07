@@ -4,9 +4,28 @@ common =../simscript/comm-build.7b:file
 crate_dir=../crates
 comp opts=[]
 
-set_env(VERSION,SimHTTP/1.20b52)
+version=1.20
+set_env(VERSION,SimHTTP/${version}b52)
 
-#
+if {
+	eq(${~os~},windows)
+	then {
+		assign(ext,.exe)
+		assign(scr_ext,.bat)
+		assign(script,START /B .\bin\simhttp.exe %1)
+		assign(slash,\\\\) # for JSON
+		assign(port,"")
+	}
+	else {
+		assign(ext,)
+		assign(scr_ext,.sh)
+		assign(script,"#!/bin/sh
+./bin/simhttp $1&")
+        assign(slash,/)
+        assign(port,80)
+	}
+}
+
 mode=mode:prop
 if {
 	eq(mode,release) then {
@@ -14,4 +33,63 @@ if {
 		assign(comp opts, ~~)
 	}
 }
+
+target package {
+	dependency {
+        target(build)
+    }
+	dependency{true}
+	http conf="{
+   \"bind\" : \"0.0.0.0\",
+   \"port\" : ${port}80,
+   \"threads\" : 20,
+   \"no terminal\": true,
+   \"mapping\" : [
+	   {\"path\":\"/\",
+	   \"translated\": \".${slash}web\"}
+   ],
+    \"log\" : {
+          \"out\": {
+                  \"out _comment_\": \"file\",
+                  \"name\": \"simhttp-${0}\",
+                  \"path\":\".${slash}\",
+                  \"max lines\": 999,
+                  \"max files\": 99
+          },
+          \"level\":2
+    },
+    \"mime\":
+        [
+        {\"ext\":\"html\", \"type\":\"text/html\"},
+        {\"ext\":\"htm\", \"type\":\"text/html\"},
+        {\"ext\":\"txt\",\"type\":\"text/plain\"}
+    ]}"
+    zip(.${~/~}simhttp-${version}.zip,
+    -A ${project}/env.conf,
+	${http conf},
+	-B ${project}/bin,
+	simhttp${ext},
+	-A ${project}/web/index.html,"
+<!DOCTYPE html>
+<html lang=\"en\">
+<head>
+  <meta charset=\"UTF-8\">
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
+  <title>Simple HTTP</title>
+</head>
+<body>
+    <header><h1>Rust HTTP Server</h1></header>
+    <main>
+    </main>
+    <footer>&copy; <script>document.write(new Date().getFullYear())</script> D Rogatkin</footer>
+</body>
+</html>",
+	-B ${project},
+	.${~/~}README.md,
+	-E ${project}/simhttp${scr_ext},
+	"${script}")
+	display(done ${~~})
+}
+
+#
 include(common);
