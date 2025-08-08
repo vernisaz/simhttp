@@ -101,7 +101,7 @@ impl LogFile {
         let mut log_path = PathBuf::from(&path);
         log_path.push(name.clone());
         log_path.set_extension("log");
-        let file = File::create(log_path).expect("can't create log");
+        let file = File::create(&log_path).expect(&format!("can't create log {log_path:?}"));
     
         LogFile { currnet_line: 0,
             current_chunk: 0,
