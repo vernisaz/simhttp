@@ -63,8 +63,8 @@ The server provides a limited support of WebSocket protocol as WS-CGI.
 
 ## How to compare it to miniserve
 If you didn't check [miniserve](https://github.com/svenstaro/miniserve/tree/master) yet, then do it now. More likely you will be satisfied with it.
-_miniserve_ reminds me [TJWS](https://tjws.sf.net) I implemented in the last century. Major difference of the _TRWS_ that it can be extended by CGI scripts
-and CGI websocket endpoints.
+ Major difference of the _TRWS_ that it can be extended by CGI scripts
+and CGI websocket endpoints. For example, I released TOTP with web interface, I couldn't do without _simhttp_.
 
 ## Status
-Current version is SimHTTP/1.12b47. It's a beta version.
+Current version is SimHTTP/1.20b52. It's the first release version.
