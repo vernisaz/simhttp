@@ -30,13 +30,18 @@ The directory where all *rlib* resides has to be specified in *crate_dir* variab
 [bee.7b](https://github.com/vernisaz/simhttp/blob/master/bee.7b) script.
 
 ## Configuring
-One JSON file is used for configuring the server. The file has to be in the same directory as the server executable.
-An example of [config](https://github.com/vernisaz/simhttp/blob/master/env.conf) file is self describing. 
+One JSON file is used for configuring the server. The file has to be in the current working directory.
+An example of [env.conf](https://github.com/vernisaz/simhttp/blob/master/env.conf) file is self describing.
+The same executable of the server can be used for several confugurations. Obvously the listening port or/and the binding
+address have to be different in the configurations.
 
 ## Running
 Just launch **simhttp**. Press 'q' for stop. (See a note in the [issues](https://github.com/vernisaz/simhttp/blob/master/issues.md))
 
-If you run _simhttp_ in a *SSH* session and want to keep it running after the session gets closed, then use:
+If you run _simhttp_ in a *SSH* session and want to keep it running after the session gets closed, then use -
+`"no terminal": true'` property in the configuration and launch it with ending `&`. The server will be less verbosive in the case.
+If you still want to see an ocasional server output to
+the console, then run it using _nohup_ utility as:
 
 > nohup simhttp &
 
@@ -54,9 +59,6 @@ and then,
 > screen -r
 
 *tmux* can be also used similarly to the _screen_.
-
-You can also specify `"no terminal": true'` in _.conf_ file, and then launch the _simhttp_
-with ending `&`. But the server will be less verbosive in the case.
 
 ## Websocket
 The server provides a limited support of WebSocket protocol as WS-CGI.
