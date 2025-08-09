@@ -26,11 +26,28 @@ micro libraries (crate) pool. They repositories should be cloned and built first
 - [SimJSON](https://github.com/vernisaz/simjson)
 - [SimThreadPool](https://github.com/vernisaz/simtpool)
 - [SimWEb](https://github.com/vernisaz/simweb) -> requires [SimTime](https://github.com/vernisaz/simtime)
+- [scripts](https://github.com/vernisaz/simscript) is required to build crates above
 
 The directory where all *rlib* resides has to be specified in *crate_dir* variable of
 [bee.7b](https://github.com/vernisaz/simhttp/blob/master/bee.7b) script.
 
-The server can be built by running _rb_ after building the dependencies.
+The folowing directories structure is expected to build the server
+```
+├─projects
+   ....
+   ├─simscript
+   ├─crates
+   ├─simhttp
+   ├─right_slash
+   ├─simjson
+   ├─simtpool
+   ├─simweb
+   ├─simtime
+   .....
+....
+```
+
+The server can be built by executing _rb_ after building the dependencies.
 
 ## Configuring
 One JSON file is used for configuring the server. The file has to be in the current working directory the server ran from.

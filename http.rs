@@ -811,7 +811,7 @@ fn decode_block(input: &[u8]) -> (Vec<u8>, u8, bool,u64,[u8;4],usize) {
         126 => if buf_len > 8 {(u16::from_be_bytes(input[2..4].try_into().unwrap()) as u64, 4_usize)} else {(0u64,buf_len)},
         127 => if buf_len > 14 {(u64::from_be_bytes(input[2..10].try_into().unwrap()), 10_usize)}
           else {(0u64,buf_len)},
-        128_u8..=u8::MAX => unreachable!(),
+        128_u8..=u8::MAX => unreachable!(), // because highest bit masked
     };
     let mut curr_mask = 0;
     let mask = if masked && buf_len > shift + 4 {
