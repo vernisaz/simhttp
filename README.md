@@ -33,17 +33,18 @@ The directory where all *rlib* resides has to be specified in *crate_dir* variab
 
 The folowing directories structure is expected to build the server
 ```
-├─projects
-   ....
-   ├─simscript
-   ├─crates
-   ├─simhttp
-   ├─right_slash
-   ├─simjson
-   ├─simtpool
-   ├─simweb
-   ├─simtime
-   .....
+├─projects┐
+│   ┌─────┘
+│   ....
+│   ├─simscript
+│   ├─crates
+│   ├─simhttp
+│   ├─right_slash
+│   ├─simjson
+│   ├─simtpool
+│   ├─simweb
+│   ├─simtime
+│   .....
 ....
 ```
 

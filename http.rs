@@ -521,6 +521,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     Ok(()) => stdin.flush().unwrap(),
                                     Err(_) => ()
                                 }
+                                LOGGER.lock().unwrap().info(&format!("websocket session has terminated, endpoint {path_translated:?} will be killed"));
                                 // forsibly kill the endpoint at a websocket disconnection
                                 load.kill().expect("command couldn't be killed");
                                 //eprintln!("need to terminate endpoint! Killed?");
