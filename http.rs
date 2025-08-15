@@ -525,7 +525,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 }
                                 LOGGER.lock().unwrap().info(&format!("websocket session has terminated, endpoint {path_translated:?} will be killed"));
                                 // forsibly kill the endpoint at a websocket disconnection
-                                load.kill().expect("command couldn't be killed");
+                                //load.kill().expect("command couldn't be killed");
                                 //eprintln!("need to terminate endpoint! Killed?");
                             });
                             // stderr
@@ -553,6 +553,9 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 _ => ()
                             }
                         });
+                        // also kill the endpoint
+                        load.kill().expect("command couldn't be killed");
+
                         load.wait().unwrap();
                         return Err(Error::new(ErrorKind::BrokenPipe, "Websocket closed")) // force to close the connection and don't try to reuse
                     }
