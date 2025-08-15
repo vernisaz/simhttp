@@ -463,7 +463,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     let mut kind = 0u8;
                                     let mut fin_data = vec![];
                                     // TODO incorporate all logic in this while to decode_block and hide the mask exposing
-                                    //. TODO use a global buffer to put data there and then read blocks from
+                                    // TODO use a global buffer to put data there and then read blocks from
                                     while !complete {
                                          let len = match reader_stream.read(&mut buffer) {
                                             Ok(len) => if len == 0 { break 'serv_ep} else { len },
@@ -474,7 +474,6 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         if data.len() == 0 { break 'serv_ep} // socket close, can be 0 for ping?
                                         
                                         while extra > 0 {
-                                            
                                             let len = match reader_stream.read(&mut buffer) {
                                                 Ok(len) => if len == 0 { break 'serv_ep} else { len },
                                                 Err(_) => break 'serv_ep,
@@ -500,9 +499,12 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         fin_data.append(&mut data);
                                     }
                                     if kind != 1 { 
-                                        if kind == 0x9 // ping
-                                           || kind == 0xA { // pong 
+                                        if kind == 0x9 { // ping
+                                            // a client usually doesn't send, error ?
                                                continue // ignore for now
+                                        } else if kind == 0xA { // pong
+                                            // check if we sent matching ping and clear it
+                                            continue 
                                         }
                                         if kind != 8 {
                                             LOGGER.lock().unwrap().error(&format!("block {kind} not supported yet {fin_data:?}"));
