@@ -162,32 +162,19 @@ fn main() {
         });
     }
     for stream in listener.incoming() {
-        let Ok(mut stream) = stream else {continue};
+        let Ok(stream) = stream else {continue};
         let stop_two = stop.clone();
         tp.execute(move || {
             loop {
-                let _ = stream.set_read_timeout(Some(Duration::from_secs(60*10)));
+                let _ = stream.set_read_timeout(Some(Duration::from_secs(60*10))); // TODO make it configurable
                 // timeout can be reset at handling long polls
                 match handle_connection(&stream)  {
-                     Err(err) => if err.kind() != ErrorKind::BrokenPipe && err.kind() != ErrorKind::ConnectionReset { 
+                     Err(err) => { if err.kind() != ErrorKind::BrokenPipe && err.kind() != ErrorKind::ConnectionReset { 
                          LOGGER.lock().unwrap().error(&format!{"Err: {err} - in handling a request"});
                          // can do it only if response isn't commited
-                         let contents = ERR404; // 500
-                         let contents = contents.as_bytes();
-                         let length = contents.len();
-                         let c_type = "text/html";
-                         
-                        if stream.write_all(format!("HTTP/1.1 500 {}\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\n\r\n", response_message(500)).as_bytes()).is_ok() {
-                            if stream.write_all(&contents).is_err() { break }
-                            let addr =
-                                match stream.peer_addr() {
-                                    Ok(addr) => addr.to_string(),
-                                    _ => "disconnected".to_string()
-                                };
-                            LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"... ... HTTP/1.1\" 500 {length}",
-                                SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()});
-                        } else {break}
-                     } else { break}
+                         let _ =report_error(500, "<grabbled> HTTP/1.1", &stream);
+                        }
+                        break }
                      _ => if stop_two.load(Ordering::SeqCst) { break }
                 }
             }
