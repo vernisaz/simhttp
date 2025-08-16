@@ -771,7 +771,29 @@ fn report_error(code: u16, request_line: &str, mut stream: &TcpStream) -> io::Re
     Ok(())
 }
 
-fn encode_block(input: &[u8]) -> Vec<u8> { // TODO add param - last block
+#[allow(dead_code)]
+fn encode_ping(input: &[u8]) -> io::Result<Vec<u8>> { 
+    let len = input.len();
+    if len > 126 {
+        return Err(io::Error::new(ErrorKind::Other, "Payload len for ping > 126"))
+    }
+    let mut res = vec![];
+    res.reserve(len+2);
+    res.push(0x89_u8); // no cont (last), ping
+    match len as u8 {
+        0..126 => {
+            res.push(len as u8); // not masked
+        }
+        _ => unreachable!("wrong {}", len) // 0 is filtered out to do not call the method
+    }
+    if len > 0 {
+        // no 4 bytes mask for server to client
+        res.extend_from_slice(input);
+    }
+    Ok(res)
+}
+
+fn encode_block(input: &[u8]) -> Vec<u8> { // TODO add param - start, mid and the last block
     let len = input.len();
     //eprintln!("encoding bl {len}");
     let mut res = vec![];
@@ -792,9 +814,7 @@ fn encode_block(input: &[u8]) -> Vec<u8> { // TODO add param - last block
         _ => unreachable!("wrong {}", len) // 0 is filtered out to do not call the method
     }
     // no 4 bytes mask for server to client
-    for b in input {
-        res.push(*b)
-    }
+    res.extend_from_slice(input);
     res
 }
 
