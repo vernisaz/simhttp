@@ -164,6 +164,7 @@ fn main() {
     for stream in listener.incoming() {
         let Ok(stream) = stream else {continue};
         let stop_two = stop.clone();
+        //let res_stream = stream.try_clone().unwrap();
         tp.execute(move || {
             loop {
                 let _ = stream.set_read_timeout(Some(Duration::from_secs(60*10))); // TODO make it configurable
@@ -179,6 +180,7 @@ fn main() {
                 }
             }
         });
+        //drop(res_stream);
         if stop.load(Ordering::SeqCst) { break }
     }
     LOGGER.lock().unwrap().info("Stopping the server...");
@@ -460,7 +462,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         let (mut data,bl_kind,last,mut extra,mask,mut mask_pos) = decode_block(&buffer[0..len]);
                                         if data.len() == 0 { break 'serv_ep} // socket close, can be 0 for ping?
                                         
-                                        while extra > 0 {
+                                        while extra > 0 { // it looks like never the case
                                             let len = match reader_stream.read(&mut buffer) {
                                                 Ok(len) => if len == 0 { break 'serv_ep} else { len },
                                                 Err(_) => break 'serv_ep,
