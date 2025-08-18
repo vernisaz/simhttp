@@ -5,7 +5,7 @@ extern crate simweb;
 use std::{
     fs::{self,File},
     io::{prelude::*, Error, ErrorKind, BufReader, self},
-    net::{TcpListener, TcpStream,ToSocketAddrs},
+    net::{TcpListener, TcpStream,ToSocketAddrs,Shutdown},
     thread,
     sync::{atomic::{AtomicBool,Ordering}, Arc,Mutex,LazyLock,OnceLock},
     path::{MAIN_SEPARATOR_STR,PathBuf},
@@ -582,6 +582,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     }
                                     drop(data);
                                 }
+                                let _ = heartbeat_stream.shutdown(Shutdown::Both);
                             });
                             let mut writer_stream = stream;
                             let mut buffer = [0_u8;MAX_LINE_LEN]; 
