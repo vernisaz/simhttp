@@ -487,20 +487,33 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         complete = last;
                                         fin_data.append(&mut data);
                                     }
-                                    if kind != 1 { 
-                                        if kind == 0x9 { // ping
+                                    match kind {
+                                        0 => { // not supporting continuation yet, ignore for now
+                                            continue
+                                        }
+                                        1 => (),
+                                        8 => { // close websocket
+                                            break
+                                        }
+                                        0x9 => { // ping
                                             // a client usually doesn't send, error ?
-                                               continue // ignore for now
-                                        } else if kind == 0xA { // pong
+                                            continue // ignore for now
+                                        }
+                                        0xA => { // pong
                                             // check if we sent matching ping and clear it
+                                            LOGGER.lock().unwrap().info(&format!("received pong for {}", u64::from_be_bytes(fin_data.try_into().unwrap())));
                                             continue 
                                         }
-                                        if kind != 8 {
-                                            LOGGER.lock().unwrap().error(&format!("block {kind} not supported yet {fin_data:?}"));
-                                            continue
-                                        } // otherwise close op
-                                        break } // currently support only UTF8 strings, no continuation or binary data
-                                    //eprintln!("all done");
+                                        2 => { // currently support only UTF8 strings, no continuation or binary data
+                                            LOGGER.lock().unwrap().error(&format!("binary block is not supported yet {fin_data:?}"));
+                                            continue 
+                                        }
+                                        _ => {
+                                            LOGGER.lock().unwrap().error(&format!("block {kind} is wrong"));
+                                            break // because more likely something wrong with the client 
+                                        }
+                                        
+                                    }
                                     // TODO think how pass a block size to endpoint as: 1. in from 4 chars len, or 2. end mark like 0x00
                                     if stdin.write_all(&fin_data.as_slice()).is_err() {break};
                                     stdin.flush().unwrap();
@@ -524,7 +537,19 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     LOGGER.lock().unwrap().error(&format!("err: {}", line.unwrap()))
                                 );
                             }) ;
-                            
+                            /*let mut heartbeat_stream = stream.try_clone().unwrap();
+                            let _heartbeat_handle = s.spawn(move || {
+                                let mut count = 0_u64;
+                                loop {
+                                    count += 1;
+                                    match heartbeat_stream.write_all(encode_ping(&count.to_be_bytes()).unwrap().as_slice()) {
+                                        Err(_) => break,
+                                        _ => ()
+                                    }
+                                    thread::sleep(Duration::from_secs(10*60)); 
+                                    // check if pong with count received
+                                }
+                            });*/
                             let mut writer_stream = stream;
                             let mut buffer = [0_u8;MAX_LINE_LEN]; 
                             loop {
