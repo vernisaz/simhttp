@@ -455,8 +455,6 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     let mut kind = 0u8;
                                     let mut fin_data = vec![];
                                     // TODO incorporate all logic in this while to decode_block and hide the mask exposing
-                                    // TODO use a global buffer to put data there and then read blocks from
-                                    
                                     while !complete {
                                         let len = match reader_stream.read(&mut buffer[reminder..]) {
                                             Ok(len) => if len == 0 { break 'serv_ep} else { len + reminder},
@@ -464,7 +462,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         };
                                         debug!("decode bl of {len}");
                                         if len == 2 {
-                                            // read more data (except op 8 -> close)
+                                            // read more data because even close(8) has to include mask
                                             reminder += 2;
                                             continue
                                         }
@@ -498,8 +496,6 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                                 }
                                             }
                                         }
-                                        // TODO - not consumed in the last block  can be copied in begining of buffer using
-                                        // https://doc.rust-lang.org/std/primitive.slice.html#method.copy_within
                                         if kind == 0 {
                                             kind = bl_kind;
                                         }
@@ -567,6 +563,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             let shared_data_reader = Arc::clone(&pong_resp);
                             let _heartbeat_handle = s.spawn(move || {
                                 let mut count = 0_u64;
+                                // TODO write ping and check for receiving pong can be done in one heartbeat thread for all websockets
                                 loop {
                                     count += 1;
                                     match heartbeat_stream.write_all(encode_ping(&count.to_be_bytes()).unwrap().as_slice()) {
