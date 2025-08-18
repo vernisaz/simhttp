@@ -445,38 +445,57 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         let stderr  = load.stderr.take().unwrap();
                         let mut stdout = load.stdout.take() .unwrap();
                         thread::scope(|s| {
-                            s.spawn(|| {
-                                let mut buffer = [0_u8;MAX_LINE_LEN]; 
+                            let pong_resp = Arc::new(Mutex::new(0_u64));
+                            let shared_data_writer = Arc::clone(&pong_resp);
+                            s.spawn(move || {
+                                let mut buffer = [0_u8;MAX_LINE_LEN];
+                                let mut reminder = 0_usize;
                                 'serv_ep: loop {
                                     let mut complete = false;
                                     let mut kind = 0u8;
                                     let mut fin_data = vec![];
                                     // TODO incorporate all logic in this while to decode_block and hide the mask exposing
                                     // TODO use a global buffer to put data there and then read blocks from
+                                    
                                     while !complete {
-                                         let len = match reader_stream.read(&mut buffer) {
-                                            Ok(len) => if len == 0 { break 'serv_ep} else { len },
+                                        let len = match reader_stream.read(&mut buffer[reminder..]) {
+                                            Ok(len) => if len == 0 { break 'serv_ep} else { len + reminder},
                                             Err(_) => break 'serv_ep,
                                         };
                                         debug!("decode bl of {len}");
-                                        let (mut data,bl_kind,last,mut extra,mask,mut mask_pos) = decode_block(&buffer[0..len]);
-                                        if data.len() == 0 { break 'serv_ep} // socket close, can be 0 for ping?
-                                        
-                                        while extra > 0 { // it looks like never the case
-                                            let len = match reader_stream.read(&mut buffer) {
-                                                Ok(len) => if len == 0 { break 'serv_ep} else { len },
-                                                Err(_) => break 'serv_ep,
-                                            };
-                                            debug!("incomplete bl requires reading {extra} more, currently {len}");
-                                            //eprintln!("read only {len}");
-                                            for i in 0..len {
-                                                extra -= 1;
-                                                data.push(buffer[i] ^ mask[mask_pos]);
-                                                mask_pos = (mask_pos + 1) % 4;
-                                                /*if extra == 0 {
-                                                    eprintln!("there are additional bytes {}", len-1);
-                                                    break
-                                                }*/
+                                        if len == 2 {
+                                            // read more data (except op 8 -> close)
+                                            reminder += 2;
+                                            continue
+                                        }
+                                        let Ok((mut data,bl_kind,last,mut extra,mask,mut mask_pos,remain)) = decode_block(&mut buffer[0..len]) else {
+                                            debug!("invalid block, ws closing");
+                                            break 'serv_ep
+                                        };
+                                        if remain { // there are data in buffer
+                                            debug!("there are {extra} data in buffer");
+                                            reminder = extra;
+                                        } else {
+                                            reminder = 0;
+                                            while extra > 0 {
+                                                let len = match reader_stream.read(&mut buffer) {
+                                                    Ok(len) => if len == 0 { break 'serv_ep} else { len },
+                                                    Err(_) => break 'serv_ep,
+                                                };
+                                                debug!("incomplete bl {bl_kind} requires reading {extra} more, currently {len}");
+                                                
+                                                for i in 0..len {
+                                                    extra -= 1;
+                                                    //debug!("unmask {:x} ^ {:x}", buffer[i] , mask[mask_pos]);
+                                                    data.push(buffer[i] ^ mask[mask_pos]);
+                                                    mask_pos = (mask_pos + 1) % 4;
+                                                    if extra == 0 && i < len - 1 {
+                                                        reminder = len-i;
+                                                        debug!("there are additional bytes {reminder} in buffer");
+                                                        buffer.copy_within(i+1..len, 0);
+                                                        break
+                                                    }
+                                                }
                                             }
                                         }
                                         // TODO - not consumed in the last block  can be copied in begining of buffer using
@@ -487,6 +506,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         complete = last;
                                         fin_data.append(&mut data);
                                     }
+                                    debug!("complete {complete} of kind {kind}");
                                     match kind {
                                         0 => { // not supporting continuation yet, ignore for now
                                             continue
@@ -501,12 +521,18 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         }
                                         0xA => { // pong
                                             // check if we sent matching ping and clear it
-                                            LOGGER.lock().unwrap().info(&format!("received pong for {}", u64::from_be_bytes(fin_data.try_into().unwrap())));
+                                            let pong_len = fin_data.len();
+                                            let pong_data = if fin_data.len() == 8 { u64::from_be_bytes(fin_data.try_into().unwrap()) } else { 0_u64 };
+                                            let mut data = shared_data_writer.lock().unwrap(); // Acquire the lock
+                                            *data = pong_data;
+                                            drop(data);
+                                            
+                                            LOGGER.lock().unwrap().info(&format!("received pong len {pong_len} as {pong_data}"));
                                             continue 
                                         }
                                         2 => { // currently support only UTF8 strings, no continuation or binary data
                                             LOGGER.lock().unwrap().error(&format!("binary block is not supported yet {fin_data:?}"));
-                                            continue 
+                                            continue
                                         }
                                         _ => {
                                             LOGGER.lock().unwrap().error(&format!("block {kind} is wrong"));
@@ -537,19 +563,26 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     LOGGER.lock().unwrap().error(&format!("err: {}", line.unwrap()))
                                 );
                             }) ;
-                            /*let mut heartbeat_stream = stream.try_clone().unwrap();
+                            let mut heartbeat_stream = stream.try_clone().unwrap();
+                            let shared_data_reader = Arc::clone(&pong_resp);
                             let _heartbeat_handle = s.spawn(move || {
                                 let mut count = 0_u64;
                                 loop {
                                     count += 1;
                                     match heartbeat_stream.write_all(encode_ping(&count.to_be_bytes()).unwrap().as_slice()) {
                                         Err(_) => break,
-                                        _ => ()
+                                        _ => heartbeat_stream.flush().unwrap(),
                                     }
-                                    thread::sleep(Duration::from_secs(10*60)); 
+                                    thread::sleep(Duration::from_secs(30*60)); 
                                     // check if pong with count received
+                                    let data = shared_data_reader.lock().unwrap();
+                                    if count != *data {
+                                        // close stream
+                                        break
+                                    }
+                                    drop(data);
                                 }
-                            });*/
+                            });
                             let mut writer_stream = stream;
                             let mut buffer = [0_u8;MAX_LINE_LEN]; 
                             loop {
@@ -832,56 +865,74 @@ fn encode_block(input: &[u8]) -> Vec<u8> { // TODO add param - start, mid and th
     res
 }
 
-fn decode_block(input: &[u8]) -> (Vec<u8>, u8, bool,u64,[u8;4],usize) {
+fn decode_block(input: &mut [u8]) -> Result<(Vec<u8>, u8, bool,usize,[u8;4],usize,bool),&str> {  
     let buf_len = input.len();
     let mut res = Vec::new ();
     res.reserve(buf_len);
-    if buf_len < 2 {
-        return (res, 3, true,0,[0,0,0,0],0usize)
+    if buf_len < 2 { // actually wait for more data
+        return Err("not enough data to decode block")
     }
+    
     let last = input[0] & 0x80 == 0x80;
     let op = input[0] & 0x0f;
     let masked = input[1] & 0x80 == 0x80;
+    if !masked {
+        return Err("client data have to be masked")
+    }
     /*if input[1] & 0x7f == 126 {
         eprintln!("len {:x} {:x}", input[2],input[3])
     }*/
     let (len, mut shift) = 
     match input[1] & 0x7f {
-        len @ 0..=125 => (len as u64, 2_usize),
-        126 => if buf_len > 8 {(u16::from_be_bytes(input[2..4].try_into().unwrap()) as u64, 4_usize)} else {(0u64,buf_len)},
-        127 => if buf_len > 14 {(u64::from_be_bytes(input[2..10].try_into().unwrap()), 10_usize)}
-          else {(0u64,buf_len)},
+        len @ 0..=125 => (len as usize, 2_usize),
+        126 => if buf_len > 8 {(u16::from_be_bytes(input[2..4].try_into().unwrap()) as usize, 4_usize)} else {(0usize,buf_len)},
+        127 => if buf_len > 14 {(u64::from_be_bytes(input[2..10].try_into().unwrap()) as usize, 10_usize)}
+          else {(0usize,buf_len)},
         128_u8..=u8::MAX => unreachable!(), // because highest bit masked
     };
     let mut curr_mask = 0;
-    let mask = if masked && buf_len > shift + 4 {
-            [input[shift],input[shift+1],input[shift+2],input[shift+3]]
-        } else {
-            [0,0,0,0]
-        };
+    if buf_len < shift + 4 {
+        return Err("not enough data to read mask")
+    }
+    let mask =
+            [input[shift],input[shift+1],input[shift+2],input[shift+3]];
+ 
     if masked {
         shift += 4
     }
-    let extra =
-        if shift+(len as usize) > buf_len {
-            //eprintln!("buffer len {total_len} lesser then required {len} plus {shift}");
-            if shift > buf_len {
-                // TODO the algorithm should be reconsidered
-                return (res, 0, true,0,[0,0,0,0],0usize)
-            }
-            len - (buf_len - shift) as u64
-        } else {
-            //eprintln!("buffer len {total_len} >= {len} + {shift}");
-            0
-        };
-
-    if len > 0 && buf_len > shift  {
-        for i in shift..buf_len {
-            res.push(input[i] ^ mask[curr_mask]);
+    let extra;
+    let mut remain = false;
+    let data_len = buf_len - shift;
+    
+    if data_len == len { // merge with last branch
+        for _i in 0..len {
+            res.push(input[shift] ^ mask[curr_mask]);
+            shift += 1;
             curr_mask = (curr_mask + 1) % 4
         }
+        extra = 0
+    } else if data_len < len {
+        for _i in 0..data_len {
+            res.push(input[shift] ^ mask[curr_mask]);
+            shift += 1;
+            curr_mask = (curr_mask + 1) % 4
+        }
+        extra = len - data_len
+    } else if data_len > len {
+        for _i in 0..len {
+            res.push(input[shift] ^ mask[curr_mask]);
+            shift += 1;
+            curr_mask = (curr_mask + 1) % 4
+        }
+        remain = true;
+        extra = data_len - len
+    } else {
+        extra = 0
     }
-    (res, op, last, extra,mask,curr_mask)
+    if remain && extra > 0 {
+        input.copy_within(shift..buf_len, 0);
+    }
+    Ok((res, op, last, extra,mask,curr_mask, remain))
 }
 
 fn response_message(code: u16) -> &'static str {
