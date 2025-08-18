@@ -16,14 +16,14 @@ Obviously SimHttp is CI/CD friendly.
 
 A serviced Rust app can run as in CLI mode as in a web mode without any change.
 
-The server is perfectly suitable for embedded development. You can deploy it on an embedded platform. CGI endpoints can be
+The server is perfectly suitable for an embedded development. You can deploy it on an embedded platform. CGI endpoints can be
 developed in C or Rust.
 
 ## Building
 A RustBee script file is provided to build the server. There are 4 dependencies from the
 micro libraries (crate) pool. The repositories should be cloned and built first.
 
-- [scripts](https://github.com/vernisaz/simscript) is required to build crates below
+- [scripts](https://github.com/vernisaz/simscript) it's only scripts required to build crates below
 - [RightSlash](https://github.com/vernisaz/right_slash)
 - [SimJSON](https://github.com/vernisaz/simjson)
 - [SimThreadPool](https://github.com/vernisaz/simtpool)
@@ -31,7 +31,7 @@ micro libraries (crate) pool. The repositories should be cloned and built first.
 
 
 The directory where all *rlib* resides has to be specified in *crate_dir* variable of
-[bee.7b](https://github.com/vernisaz/simhttp/blob/master/bee.7b) script.
+[bee.7b](https://github.com/vernisaz/simhttp/blob/master/bee.7b) script.It has to be presented before building crates and the server.
 
 The following directories structure is expected to build the server
 ```
@@ -92,4 +92,4 @@ If you didn't check [miniserve](https://github.com/svenstaro/miniserve/tree/mast
 and CGI websocket endpoints. For example, I released TOTP with web interface, I couldn't do without _simhttp_.
 
 ## Status
-Current version is SimHTTP/1.20b52. It's the first release version.
+Current version is SimHTTP/1.22b55. It's still early beta version.
