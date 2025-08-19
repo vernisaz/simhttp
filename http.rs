@@ -7,7 +7,7 @@ use std::{
     io::{prelude::*, Error, ErrorKind, BufReader, self},
     net::{TcpListener, TcpStream,ToSocketAddrs,Shutdown},
     thread,
-    sync::{atomic::{AtomicBool,Ordering}, Arc,Mutex,LazyLock,OnceLock},
+    sync::{atomic::{AtomicBool,Ordering}, Arc,Mutex,LazyLock,OnceLock,mpsc},
     path::{MAIN_SEPARATOR_STR,PathBuf},
     collections::HashMap,
     process::{Stdio,Command},
@@ -444,6 +444,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         let mut stdin = load.stdin.take().unwrap(); // TODO can be no stdin endpoint just sending out some info, or for example file content
                         let stderr  = load.stderr.take().unwrap();
                         let mut stdout = load.stdout.take() .unwrap();
+                        let (send, recv) = mpsc::channel();
                         thread::scope(|s| {
                             let pong_resp = Arc::new(Mutex::new(0_u64));
                             let shared_data_writer = Arc::clone(&pong_resp);
@@ -517,7 +518,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         }
                                         0xA => { // pong
                                             // check if we sent matching ping and clear it
-                                            let pong_len = fin_data.len();
+                                            //let pong_len = fin_data.len();
                                             let pong_data = if fin_data.len() == 8 { u64::from_be_bytes(fin_data.try_into().unwrap()) } else { 0_u64 };
                                             let mut data = shared_data_writer.lock().unwrap(); // Acquire the lock
                                             *data = pong_data;
@@ -559,6 +560,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             }) ;
                             let mut heartbeat_stream = stream.try_clone().unwrap();
                             let shared_data_reader = Arc::clone(&pong_resp);
+                            
                             let _heartbeat_handle = s.spawn(move || {
                                 let mut count = 0_u64;
                                 // TODO write ping and check for receiving pong can be done in one heartbeat thread for all websockets
@@ -569,15 +571,17 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         _ => heartbeat_stream.flush().unwrap(),
                                     }
                                     thread::sleep(Duration::from_secs(30*60)); 
+                                    if let Ok(_) = recv.recv_timeout(Duration::from_secs(30*60)) {
+                                        break; // Exit the thread or handle the interruption
+                                    }
                                     // check if pong with count received
                                     let data = shared_data_reader.lock().unwrap();
                                     if count != *data {
-                                        // close stream
+                                        let _ = heartbeat_stream.shutdown(Shutdown::Both);
                                         break
                                     }
                                     drop(data);
                                 }
-                                let _ = heartbeat_stream.shutdown(Shutdown::Both);
                             });
                             let mut writer_stream = stream;
                             let mut buffer = [0_u8;MAX_LINE_LEN]; 
@@ -596,6 +600,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 _ => ()
                             }
                         });
+                        send.send(()).unwrap();
                         // also kill the endpoint
                         load.kill().expect("command couldn't be killed");
 
