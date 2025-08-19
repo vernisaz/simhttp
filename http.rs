@@ -461,12 +461,12 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                             Err(_) => break 'serv_ep,
                                         };
                                         debug!("decode bl of {len}");
-                                        if len == 2 {
+                                        if reminder == 0 && len <= 2 {
                                             // read more data because even close(8) has to include mask
-                                            reminder += 2;
+                                            reminder += len;
                                             continue
                                         }
-                                        let Ok((mut data,bl_kind,last,mut extra,mask,mut mask_pos,remain)) = decode_block(&mut buffer[0..len]) else {
+                                        let Ok((mut data,bl_kind,last,mut extra,mask,mut mask_pos,remain)) = decode_block(&mut buffer[0..len + reminder]) else {
                                             debug!("invalid block, ws closing");
                                             break 'serv_ep
                                         };
