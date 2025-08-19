@@ -521,9 +521,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                             let pong_data = if fin_data.len() == 8 { u64::from_be_bytes(fin_data.try_into().unwrap()) } else { 0_u64 };
                                             let mut data = shared_data_writer.lock().unwrap(); // Acquire the lock
                                             *data = pong_data;
-                                            drop(data);
-                                            
-                                            LOGGER.lock().unwrap().info(&format!("received pong len {pong_len} as {pong_data}"));
+                                            //LOGGER.lock().unwrap().info(&format!("received pong len {pong_len} as {pong_data}"));
                                             continue 
                                         }
                                         2 => { // currently support only UTF8 strings, no continuation or binary data
