@@ -567,7 +567,6 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 // TODO write ping and check for receiving pong can be done in one heartbeat thread for all websockets
                                 loop {
                                     count += 1;
-                                    debug!("sending ping");
                                     match heartbeat_stream.write_all(encode_ping(&count.to_be_bytes()).unwrap().as_slice()) {
                                         Err(_) => break,
                                         _ => heartbeat_stream.flush().unwrap(),
