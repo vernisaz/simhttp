@@ -603,7 +603,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         drop(data);
                                     }
                                 });
-                            }
+                            } });
                             let mut writer_stream = stream;
                             let mut buffer = [0_u8;MAX_LINE_LEN]; 
                             loop {
@@ -620,7 +620,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             match writer_stream.write_all(&[0x88,0]) {
                                 _ => ()
                             }
-                        });
+                       // });
                         let _ = send.send(());
                         // also kill the endpoint
                         load.kill().expect("command couldn't be killed");
