@@ -458,21 +458,22 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     // TODO incorporate all logic in this while to decode_block and hide the mask exposing
                                     while !complete {
                                         let len = match reader_stream.read(&mut buffer[reminder..]) {
-                                            Ok(len) => if len == 0 { break 'serv_ep} else { len + reminder},
+                                            Ok(len) => if len == 0 { break 'serv_ep} else { len },
                                             Err(_) => break 'serv_ep,
                                         };
-                                        debug!("decode bl of {len}");
-                                        if reminder == 0 && len <= 2 {
+                                        debug!("decode bl of {len}/{reminder}");
+                                        if reminder  + len <= 2 {
                                             // read more data because even close(8) has to include mask
                                             reminder += len;
                                             continue
                                         }
+                                        
                                         let Ok((mut data,bl_kind,last,mut extra,mask,mut mask_pos,remain)) = decode_block(&mut buffer[0..len + reminder]) else {
-                                            debug!("invalid block, ws closing");
+                                            debug!("invalid block of {}, ws closing", len + reminder);
                                             break 'serv_ep
                                         };
                                         if remain { // there are data in buffer
-                                            debug!("there are {extra} data in buffer");
+                                            debug!("there are {extra} data in buffer for further processing");
                                             reminder = extra;
                                         } else {
                                             reminder = 0;
@@ -566,20 +567,24 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 // TODO write ping and check for receiving pong can be done in one heartbeat thread for all websockets
                                 loop {
                                     count += 1;
+                                    debug!("sending ping");
                                     match heartbeat_stream.write_all(encode_ping(&count.to_be_bytes()).unwrap().as_slice()) {
                                         Err(_) => break,
                                         _ => heartbeat_stream.flush().unwrap(),
                                     }
                                     if let Ok(_) = recv.recv_timeout(Duration::from_secs(30*60)) {
+                                        debug!("premature termination waiting");
                                         break; // Exit the thread or handle the interruption
                                     }
                                     // check if pong with count received
                                     let data = shared_data_reader.lock().unwrap();
                                     if count != *data {
+                                        debug!("no matching pong data, closing stream");
                                         let _ = heartbeat_stream.shutdown(Shutdown::Both); // shutdown TCP stream
                                         break
                                     }
                                     drop(data);
+                                    debug!("pong Ok");
                                 }
                             });
                             let mut writer_stream = stream;
