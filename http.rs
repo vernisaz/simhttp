@@ -464,6 +464,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         let stderr  = load.stderr.take().unwrap();
                         let mut stdout = load.stdout.take() .unwrap();
                         let (send, recv) = mpsc::channel();
+                        
                         thread::scope(|s| {
                             let pong_resp = Arc::new(Mutex::new(0_u64));
                             let shared_data_writer = Arc::clone(&pong_resp);
@@ -603,7 +604,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         drop(data);
                                     }
                                 });
-                            } });
+                            } 
                             let mut writer_stream = stream;
                             let mut buffer = [0_u8;MAX_LINE_LEN]; 
                             loop {
@@ -620,10 +621,8 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             match writer_stream.write_all(&[0x88,0]) {
                                 _ => ()
                             }
-                       // });
-                        let _ = send.send(());
-                        // also kill the endpoint
-                        load.kill().expect("command couldn't be killed");
+                            let _ = send.send(());
+                        });
 
                         load.wait().unwrap();
                         return Err(Error::new(ErrorKind::BrokenPipe, "Websocket closed")) // force to close the connection and don't try to reuse
