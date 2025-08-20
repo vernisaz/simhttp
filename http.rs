@@ -54,6 +54,10 @@ static MAPPING: OnceLock<Vec<Mapping>> = OnceLock::new();
 
 static NO_TERMINAL : OnceLock<bool> = OnceLock::new();
 
+static KEEPALIVE_TIMEOUT : OnceLock<u64> = OnceLock::new();
+
+static PING_INTERVAL : OnceLock<u64> = OnceLock::new();
+
 const MAX_LINE_LEN : usize = 64*1024;
 
 const PARSE_NUM_ERR : u16 = 501;
@@ -68,6 +72,14 @@ fn init_mapping(mapping: Vec<Mapping>) {
 
 fn init_terminal(no_terminal: bool) -> () {
     NO_TERMINAL.set(no_terminal).unwrap()
+}
+
+fn init_keepalive(keepalive_mins: u64) -> () {
+    KEEPALIVE_TIMEOUT.set(keepalive_mins).unwrap()
+}
+
+fn init_ping_interval(interval_mins: u64) -> () {
+    PING_INTERVAL.set(interval_mins).unwrap()
 }
 
 fn main() {
@@ -107,6 +119,10 @@ fn main() {
          val.to_owned()} else {false};
     init_terminal(no_terminal);
     // TODO if a terminal is there, then can do debug printout on it bypassing log
+    init_keepalive(if let Some(Num(val)) = env.get("keep_alive_min") {
+         if *val >= 0.0 {*val as u64} else {10_u64} } else {10_u64});
+    init_ping_interval(if let Some(Num(val)) = env.get("ping_interval_min") {
+         if *val >= 0.0 {*val as u64} else {30_u64} } else {30_u64});
     let Some(Num(tp)) = env.get("threads") else {
         eprintln!{"No number of threads configured"}
         return
@@ -140,11 +156,11 @@ fn main() {
     
     let tp = ThreadPool::new(*tp as usize);
 
-    let listener = TcpListener::bind(format!{"{bind}:{port}"}).expect("can't bind {bind} to {port}, probably is already in use");
+    let listener = TcpListener::bind(format!{"{bind}:{port}"}).expect("can't bind {bind} to {port}, probably it's already in use");
     let stop = Arc::new(AtomicBool::new(false));
     let stop_one = stop.clone();
     init_mapping(read_mapping(mapping));
-    LOGGER.lock().unwrap().info(&format!{"Server started fot {bind}:{port}"});
+    LOGGER.lock().unwrap().info(&format!{"Server started for {bind}:{port}"});
     let stop_listener = listener.try_clone().unwrap();
     if !no_terminal {
        thread::spawn(move || {
@@ -167,11 +183,11 @@ fn main() {
         //let res_stream = stream.try_clone().unwrap();
         tp.execute(move || {
             loop {
-                let _ = stream.set_read_timeout(Some(Duration::from_secs(60*10))); // TODO make it configurable
+                let _ = stream.set_read_timeout(Some(Duration::from_secs(60*KEEPALIVE_TIMEOUT.get().unwrap())));
                 // timeout can be reset at handling long polls
                 match handle_connection(&stream)  {
                      Err(err) => { if err.kind() != ErrorKind::BrokenPipe && err.kind() != ErrorKind::ConnectionReset { 
-                         LOGGER.lock().unwrap().error(&format!{"Err: {err} - in handling a request"});
+                         LOGGER.lock().unwrap().error(&format!{"Err: {err} - in handling the request"});
                          // can do it only if response isn't commited
                          let _ =report_error(500, "<grabbled> HTTP/1.1", &stream);
                         }
@@ -571,9 +587,8 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         Err(_) => break,
                                         _ => heartbeat_stream.flush().unwrap(),
                                     }
-                                    if let Ok(_) = recv.recv_timeout(Duration::from_secs(30*60)) {
-                                        debug!("premature termination waiting");
-                                        break; // Exit the thread or handle the interruption
+                                    if let Ok(_) = recv.recv_timeout(Duration::from_secs(60*PING_INTERVAL.get().unwrap())) {
+                                        break; // Handle the interruption
                                     }
                                     // check if pong with count received
                                     let data = shared_data_reader.lock().unwrap();
@@ -583,7 +598,6 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         break
                                     }
                                     drop(data);
-                                    debug!("pong Ok");
                                 }
                             });
                             let mut writer_stream = stream;
