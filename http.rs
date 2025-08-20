@@ -577,29 +577,30 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             }) ;
                             let mut heartbeat_stream = stream.try_clone().unwrap();
                             let shared_data_reader = Arc::clone(&pong_resp);
-                            
-                            let _heartbeat_handle = s.spawn(move || {
-                                let mut count = 0_u64;
-                                // TODO write ping and check for receiving pong can be done in one heartbeat thread for all websockets
-                                loop {
-                                    count += 1;
-                                    match heartbeat_stream.write_all(encode_ping(&count.to_be_bytes()).unwrap().as_slice()) {
-                                        Err(_) => break,
-                                        _ => heartbeat_stream.flush().unwrap(),
+                            if *PING_INTERVAL.get().unwrap() > 0 {
+                                let _heartbeat_handle = s.spawn(move || {
+                                    let mut count = 0_u64;
+                                    // TODO write ping and check for receiving pong can be done in one heartbeat thread for all websockets
+                                    loop {
+                                        count += 1;
+                                        match heartbeat_stream.write_all(encode_ping(&count.to_be_bytes()).unwrap().as_slice()) {
+                                            Err(_) => break,
+                                            _ => heartbeat_stream.flush().unwrap(),
+                                        }
+                                        if let Ok(_) = recv.recv_timeout(Duration::from_secs(60*PING_INTERVAL.get().unwrap())) {
+                                            break; // Handle the interruption
+                                        }
+                                        // check if pong with count received
+                                        let data = shared_data_reader.lock().unwrap();
+                                        if count != *data {
+                                            debug!("no matching pong data, closing stream");
+                                            let _ = heartbeat_stream.shutdown(Shutdown::Both); // shutdown TCP stream
+                                            break
+                                        }
+                                        drop(data);
                                     }
-                                    if let Ok(_) = recv.recv_timeout(Duration::from_secs(60*PING_INTERVAL.get().unwrap())) {
-                                        break; // Handle the interruption
-                                    }
-                                    // check if pong with count received
-                                    let data = shared_data_reader.lock().unwrap();
-                                    if count != *data {
-                                        debug!("no matching pong data, closing stream");
-                                        let _ = heartbeat_stream.shutdown(Shutdown::Both); // shutdown TCP stream
-                                        break
-                                    }
-                                    drop(data);
-                                }
-                            });
+                                });
+                            }
                             let mut writer_stream = stream;
                             let mut buffer = [0_u8;MAX_LINE_LEN]; 
                             loop {
