@@ -119,10 +119,12 @@ fn main() {
          val.to_owned()} else {false};
     init_terminal(no_terminal);
     // TODO if a terminal is there, then can do debug printout on it bypassing log
-    init_keepalive(if let Some(Num(val)) = env.get("keep_alive_min") {
-         if *val >= 0.0 {*val as u64} else {10_u64} } else {10_u64});
-    init_ping_interval(if let Some(Num(val)) = env.get("ping_interval_min") {
-         if *val >= 0.0 {*val as u64} else {30_u64} } else {30_u64});
+    init_keepalive(match env.get("keep_alive_mins") {
+        Some(Num(val)) if *val >= 0.0 => *val as u64,
+        _ => 10_u64,});
+    init_ping_interval(match env.get("ping_interval_mins") {
+        Some(Num(val)) => *val as u64,
+        _ => 30_u64,});
     let Some(Num(tp)) = env.get("threads") else {
         eprintln!{"No number of threads configured"}
         return
