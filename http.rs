@@ -119,12 +119,7 @@ fn main() {
          val.to_owned()} else {false};
     init_terminal(no_terminal);
     // TODO if a terminal is there, then can do debug printout on it bypassing log
-    init_keepalive(match env.get("keep_alive_mins") {
-        Some(Num(val)) if *val >= 0.0 => *val as u64,
-        _ => 10_u64,});
-    init_ping_interval(match env.get("ping_interval_mins") {
-        Some(Num(val)) => *val as u64,
-        _ => 30_u64,});
+    
     let Some(Num(tp)) = env.get("threads") else {
         eprintln!{"No number of threads configured"}
         return
@@ -155,6 +150,12 @@ fn main() {
         } 
     };
     init_mime(mime2);
+    init_keepalive(match env.get("keep_alive_mins") {
+        Some(Num(val)) if *val >= 0.0 => *val as u64,
+        _ => 10_u64,});
+    init_ping_interval(match env.get("ping_interval_mins") {
+        Some(Num(val)) => *val as u64,
+        _ => 30_u64,});
     
     let tp = ThreadPool::new(*tp as usize);
 
@@ -620,7 +621,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 _ => ()
                             }
                         });
-                        send.send(()).unwrap();
+                        let _ = send.send(());
                         // also kill the endpoint
                         load.kill().expect("command couldn't be killed");
 
