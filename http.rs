@@ -570,14 +570,13 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         Err(_) => break,
                                         _ => heartbeat_stream.flush().unwrap(),
                                     }
-                                    thread::sleep(Duration::from_secs(30*60)); 
                                     if let Ok(_) = recv.recv_timeout(Duration::from_secs(30*60)) {
                                         break; // Exit the thread or handle the interruption
                                     }
                                     // check if pong with count received
                                     let data = shared_data_reader.lock().unwrap();
                                     if count != *data {
-                                        let _ = heartbeat_stream.shutdown(Shutdown::Both);
+                                        let _ = heartbeat_stream.shutdown(Shutdown::Both); // shutdown TCP stream
                                         break
                                     }
                                     drop(data);
