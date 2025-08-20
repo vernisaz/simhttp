@@ -31,7 +31,8 @@ micro libraries (crate) pool. The repositories should be cloned and built first.
 
 
 The directory where all *rlib* resides has to be specified in *crate_dir* variable of
-[bee.7b](https://github.com/vernisaz/simhttp/blob/master/bee.7b) script.It has to be presented before building crates and the server.
+[bee.7b](https://github.com/vernisaz/simhttp/blob/master/bee.7b) script. 
+It has to be presented before building crates and the server.
 
 The following directories structure is expected to build the server
 ```
@@ -89,7 +90,7 @@ The server provides a limited support of WebSocket protocol as WS-CGI. Only stri
 ## How to compare it to miniserve
 If you didn't check [miniserve](https://github.com/svenstaro/miniserve/tree/master) yet, then do it now. More likely you will be satisfied with it.
  Major difference of the _TRWS_ that it can be extended by CGI scripts
-and CGI websocket endpoints. For example, I released TOTP with web interface, I couldn't do without _simhttp_.
+and CGI websocket endpoints. For example, I implemented [TOTP](https://github.com/vernisaz/simtotp) with web interface, I couldn't do without _simhttp_.
 
 ## Status
 Current version is SimHTTP/1.22b55. It's still early beta version.
