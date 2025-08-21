@@ -84,13 +84,17 @@ and then,
 
 *tmux* can be also used similarly to the _screen_.
 
-## Websocket
-The server provides a limited support of WebSocket protocol as WS-CGI. Only string UTF-8 packets are supported.
+[bee.7b](./bee.7b) contains details how to run it in the background under Windows.
 
-## How to compare it to miniserve
+## Websocket
+The server provides a limited support of WebSocket protocol as WS-CGI. Only UTF-8 string packets are supported.
+
+## How to compare it to miniserve and other Rust webservers
 If you didn't check [miniserve](https://github.com/svenstaro/miniserve/tree/master) yet, then do it now. More likely you will be satisfied with it.
  Major difference of the _TRWS_ that it can be extended by CGI scripts
-and CGI websocket endpoints. For example, I implemented [TOTP](https://github.com/vernisaz/simtotp) with web interface, I couldn't do without _simhttp_.
+and CGI websocket endpoints. For example, I implemented [TOTP](https://github.com/vernisaz/simtotp) with web interface,
+I couldn't do without _simhttp_. Simhttp is decoupled from deployed Rust applications, and you can deploy them without any change
+of the server.
 
 ## Status
 Current version is SimHTTP/1.22b55. It's still early beta version.
