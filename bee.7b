@@ -1,7 +1,7 @@
 project  =simhttp
 main=http
 common =..${~/~}simscript${~/~}comm-build.7b:file
-crate_dir=..${~/~}crates
+crate_dir=../rusthub/src/rust${~/~}crates
 comp opts=[]
 
 version=1.22
@@ -30,6 +30,14 @@ mode=mode:prop
 if {
 	eq(mode,release) then {
 		array(-C,opt-level=3)
+		assign(comp opts, ~~)
+	}
+}
+
+cfg=cfg:prop
+if {
+	neq(cfg,"cfg") then {
+		array(comp opts, --cfg,cfg)
 		assign(comp opts, ~~)
 	}
 }

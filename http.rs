@@ -568,7 +568,8 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 }
                                 LOGGER.lock().unwrap().info(&format!("websocket session has terminated, endpoint {path_translated:?} will be killed"));
                                 // forsibly kill the endpoint at a websocket disconnection
-                                //load.kill().expect("command couldn't be killed"); // uncomment in case of instability
+                                #[cfg(extra_stable)] // set in case of instability
+                                load.kill().expect("command couldn't be killed"); 
                                 //eprintln!("need to terminate endpoint! Killed?");
                             });
                             // stderr
@@ -838,7 +839,6 @@ fn report_error(code: u16, request_line: &str, mut stream: &TcpStream) -> io::Re
     Ok(())
 }
 
-#[allow(dead_code)]
 fn encode_ping(input: &[u8]) -> io::Result<Vec<u8>> { 
     let len = input.len();
     if len > 126 {
