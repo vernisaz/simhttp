@@ -464,11 +464,10 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         let stderr  = load.stderr.take().unwrap();
                         let mut stdout = load.stdout.take() .unwrap();
                         let (send, recv) = mpsc::channel();
-                        
+                        let pong_resp = Arc::new(Mutex::new(0_u64));
+                        let shared_data_writer = Arc::clone(&pong_resp);
                         thread::scope(|s| {
-                            let pong_resp = Arc::new(Mutex::new(0_u64));
-                            let shared_data_writer = Arc::clone(&pong_resp);
-                            s.spawn(move || {
+                            s.spawn( || {
                                 let mut buffer = [0_u8;MAX_LINE_LEN];
                                 let mut reminder = 0_usize;
                                 'serv_ep: loop {
@@ -569,7 +568,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 }
                                 LOGGER.lock().unwrap().info(&format!("websocket session has terminated, endpoint {path_translated:?} will be killed"));
                                 // forsibly kill the endpoint at a websocket disconnection
-                                //load.kill().expect("command couldn't be killed");
+                                //load.kill().expect("command couldn't be killed"); // uncomment in case of instability
                                 //eprintln!("need to terminate endpoint! Killed?");
                             });
                             // stderr
