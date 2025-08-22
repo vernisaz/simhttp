@@ -1,7 +1,7 @@
 project  =simhttp
 main=http
 common =..${~/~}simscript${~/~}comm-build.7b:file
-crate_dir=../rusthub/src/rust${~/~}crates
+crate_dir=..${~/~}crates
 comp opts=[]
 
 version=1.22
