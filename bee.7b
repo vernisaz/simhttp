@@ -52,6 +52,8 @@ target package {
    \"port\" : ${port}80,
    \"threads\" : 20,
    \"no terminal\": true,
+   \"keep_alive_mins\": 10,
+   \"ping_interval_mins\": 32,
    \"mapping\" : [
 	   {\"path\":\"/\",
 	   \"translated\": \".${slash}web\"}
