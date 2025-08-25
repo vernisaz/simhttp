@@ -51,7 +51,7 @@ The following directories structure is expected to build the server
 ....
 ```
 
-The server can be built by executing _rb_ in its repository.
+The server is built by executing _rb_ in its repository.
 
 ## Configuring
 One JSON file is used for configuring the server. The file has to be in the current working directory the server ran from.
@@ -97,4 +97,4 @@ I couldn't do without _simhttp_. Simhttp is decoupled from deployed Rust applica
 of the server.
 
 ## Status
-Current version is SimHTTP/1.22b55. It's still early beta version.
+Current version is SimHTTP/1.22b55. It's a beta version.
