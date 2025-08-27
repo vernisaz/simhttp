@@ -623,7 +623,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             }
                             let _ = send.send(());
                         });
-
+                        // TODO need a thread for stdout read loop
                         load.wait().unwrap();
                         return Err(Error::new(ErrorKind::BrokenPipe, "Websocket closed")) // force to close the connection and don't try to reuse
                     }
