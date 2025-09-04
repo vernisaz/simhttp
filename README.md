@@ -27,7 +27,7 @@ micro libraries (crate) pool. The repositories should be cloned and built first.
 - [RightSlash](https://github.com/vernisaz/right_slash)
 - [SimJSON](https://github.com/vernisaz/simjson)
 - [SimThreadPool](https://github.com/vernisaz/simtpool)
-- [SimWEb](https://github.com/vernisaz/simweb) -> requires [SimTime](https://github.com/vernisaz/simtime)
+- [SimWeb](https://github.com/vernisaz/simweb) -> requires [SimTime](https://github.com/vernisaz/simtime)
 
 
 The directory where all *rlib* resides has to be specified in *crate_dir* variable of
