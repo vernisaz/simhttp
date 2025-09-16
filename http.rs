@@ -307,6 +307,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
             env::vars().filter(|&(ref k, _)|
              k != "PATH").collect()
         };
+        // CGI spec: https://datatracker.ietf.org/doc/html/rfc3875
         env.insert("GATEWAY_INTERFACE".to_string(), "CGI/1.1".to_string());
         env.insert("QUERY_STRING".to_string(), query);
         if let Ok(peer_addr) = stream.peer_addr() {
