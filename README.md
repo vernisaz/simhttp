@@ -94,7 +94,7 @@ If you didn't check [miniserve](https://github.com/svenstaro/miniserve/tree/mast
  Major difference of the _TRWS_ that it can be extended by CGI scripts
 and CGI websocket endpoints. For example, I implemented [TOTP](https://github.com/vernisaz/simtotp) with web interface,
 I couldn't do without _simhttp_. Simhttp is decoupled from deployed Rust applications, and you can deploy them without any change
-of the server.
+of the server and even dynamically.
 
 ## Status
-Current version is SimHTTP/1.22b55. It's a beta version.
+Current version is SimHTTP/1.23b58. It's a beta version.
