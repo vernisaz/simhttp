@@ -894,9 +894,9 @@ fn encode_block(input: &[u8]) -> Vec<u8> { // TODO add param - start, mid and th
 fn decode_block(input: &mut [u8]) -> Result<(Vec<u8>, u8, bool,usize,[u8;4],usize,bool),String> {  
     let buf_len = input.len();
     let mut res = Vec::new ();
-    res.reserve(buf_len);
     if buf_len < 2 { // actually wait for more data
-        return Err("not enough data to decode block".to_string())
+        // not enough data to decode the block
+        return Ok((res, 0, false, 0,[0u8;4],0, false))
     }
     
     let last = input[0] & 0x80 == 0x80;
@@ -905,9 +905,6 @@ fn decode_block(input: &mut [u8]) -> Result<(Vec<u8>, u8, bool,usize,[u8;4],usiz
     if !masked {
         return Err("client data have to be masked".to_string())
     }
-    /*if input[1] & 0x7f == 126 {
-        eprintln!("len {:x} {:x}", input[2],input[3])
-    }*/
     let (len, mut shift) = 
     match input[1] & 0x7f {
         len @ 0..=125 => (len as usize, 2_usize),
@@ -917,9 +914,8 @@ fn decode_block(input: &mut [u8]) -> Result<(Vec<u8>, u8, bool,usize,[u8;4],usiz
         128_u8..=u8::MAX => unreachable!(), // because highest bit masked
     };
     let mut curr_mask = 0;
-    if buf_len < shift + 4 {
+    if buf_len < shift + 4 { // request to get more block data
         return Ok((res, op, last, 0,[0u8;4],0, false))
-        //return Err(format!("not enough data to read mask {buf_len} < {shift} + 4"))
     }
     let mask =
             [input[shift],input[shift+1],input[shift+2],input[shift+3]];
@@ -927,6 +923,7 @@ fn decode_block(input: &mut [u8]) -> Result<(Vec<u8>, u8, bool,usize,[u8;4],usiz
     if masked {
         shift += 4
     }
+    res.reserve(buf_len);
     let extra;
     let mut remain = false;
     let data_len = buf_len - shift;
