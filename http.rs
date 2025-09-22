@@ -488,10 +488,15 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                             continue
                                         }
                                         
-                                        let Ok((mut data,bl_kind,last,mut extra,mask,mut mask_pos,remain)) = decode_block(&mut buffer[0..len + reminder]) else {
-                                            debug!("invalid block of {}, ws closing", len + reminder);
+                                        let Ok((mut data,bl_kind,last,mut extra,mask,mut mask_pos,remain)) = decode_block(&mut buffer[0..len + reminder])
+                                            .or_else(|e| {LOGGER.lock().unwrap().error(&format!("decode bl err:{e}")); Err(e)}) else {
+                                            debug!("invalid block of {}, WS's closing", len + reminder);
                                             break 'serv_ep
                                         };
+                                        if data.is_empty() && extra == 0 && u32::from_be_bytes(mask) == 0 { // need more data to decode the buffer
+                                            reminder += len;
+                                            continue
+                                        }
                                         if remain { // there are data in buffer
                                             debug!("there are {extra} data in buffer for further processing");
                                             reminder = extra;
@@ -886,19 +891,19 @@ fn encode_block(input: &[u8]) -> Vec<u8> { // TODO add param - start, mid and th
     res
 }
 
-fn decode_block(input: &mut [u8]) -> Result<(Vec<u8>, u8, bool,usize,[u8;4],usize,bool),&str> {  
+fn decode_block(input: &mut [u8]) -> Result<(Vec<u8>, u8, bool,usize,[u8;4],usize,bool),String> {  
     let buf_len = input.len();
     let mut res = Vec::new ();
     res.reserve(buf_len);
     if buf_len < 2 { // actually wait for more data
-        return Err("not enough data to decode block")
+        return Err("not enough data to decode block".to_string())
     }
     
     let last = input[0] & 0x80 == 0x80;
     let op = input[0] & 0x0f;
     let masked = input[1] & 0x80 == 0x80;
     if !masked {
-        return Err("client data have to be masked")
+        return Err("client data have to be masked".to_string())
     }
     /*if input[1] & 0x7f == 126 {
         eprintln!("len {:x} {:x}", input[2],input[3])
@@ -913,7 +918,8 @@ fn decode_block(input: &mut [u8]) -> Result<(Vec<u8>, u8, bool,usize,[u8;4],usiz
     };
     let mut curr_mask = 0;
     if buf_len < shift + 4 {
-        return Err("not enough data to read mask")
+        return Ok((res, op, last, 0,[0u8;4],0, false))
+        //return Err(format!("not enough data to read mask {buf_len} < {shift} + 4"))
     }
     let mask =
             [input[shift],input[shift+1],input[shift+2],input[shift+3]];
