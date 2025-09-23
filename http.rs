@@ -912,14 +912,14 @@ fn decode_block(input: &mut [u8]) -> Result<(Vec<u8>, u8, bool,usize,[u8;4],usiz
         126 => if buf_len >= 4 {(u16::from_be_bytes(input[2..4].try_into().unwrap()) as usize, 4_usize)} else {(0usize,buf_len)},
         127 => if buf_len >= 10 {(u64::from_be_bytes(input[2..10].try_into().unwrap()) as usize, 10_usize)}
           else {(0usize,buf_len)},
-        128_u8..=u8::MAX => unreachable!(), // because highest bit masked
+        128_u8..=u8::MAX => unreachable!(), // because highest bit is cleaned
     };
     if buf_len < shift + 4 { // request to get more block data
         return Ok((res, op, last, 0,[0u8;4],0, false))
     }
     let mut curr_mask = 0;
     let mask;
-    if masked {
+    if masked { // redundant if because else branch is never triggered
         mask = [input[shift],input[shift+1],input[shift+2],input[shift+3]];
         shift += 4
     } else {
