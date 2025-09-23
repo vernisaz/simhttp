@@ -12,7 +12,7 @@ use std::{
     collections::HashMap,
     process::{Stdio,Command},
     time::{SystemTime,UNIX_EPOCH,Duration},
-    env, convert::TryInto
+    env, convert::TryInto, cmp,
 };
 use simtpool::ThreadPool;
 use simjson::JsonData::{Num,Text,Data,Arr,Bool,self};
@@ -905,25 +905,27 @@ fn decode_block(input: &mut [u8]) -> Result<(Vec<u8>, u8, bool,usize,[u8;4],usiz
     if !masked {
         return Err("client data have to be masked".to_string())
     }
+    // reconsider the below fragment to return for more data if len can't be calculated
     let (len, mut shift) = 
     match input[1] & 0x7f {
         len @ 0..=125 => (len as usize, 2_usize),
-        126 => if buf_len > 8 {(u16::from_be_bytes(input[2..4].try_into().unwrap()) as usize, 4_usize)} else {(0usize,buf_len)},
-        127 => if buf_len > 14 {(u64::from_be_bytes(input[2..10].try_into().unwrap()) as usize, 10_usize)}
+        126 => if buf_len >= 4 {(u16::from_be_bytes(input[2..4].try_into().unwrap()) as usize, 4_usize)} else {(0usize,buf_len)},
+        127 => if buf_len >= 10 {(u64::from_be_bytes(input[2..10].try_into().unwrap()) as usize, 10_usize)}
           else {(0usize,buf_len)},
         128_u8..=u8::MAX => unreachable!(), // because highest bit masked
     };
-    let mut curr_mask = 0;
     if buf_len < shift + 4 { // request to get more block data
         return Ok((res, op, last, 0,[0u8;4],0, false))
     }
-    let mask =
-            [input[shift],input[shift+1],input[shift+2],input[shift+3]];
- 
+    let mut curr_mask = 0;
+    let mask;
     if masked {
+        mask = [input[shift],input[shift+1],input[shift+2],input[shift+3]];
         shift += 4
+    } else {
+        mask = [0u8;4]
     }
-    res.reserve(buf_len);
+    res.reserve(cmp::min(len, buf_len)); 
     let extra;
     let mut remain = false;
     let data_len = buf_len - shift;
