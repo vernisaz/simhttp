@@ -5,7 +5,7 @@ use std::{
     io::{Seek},
     fmt::Display,
 };
-use io;
+use crate::io;
 
 static MAX_LINES: u32 = 10_1000;
 
