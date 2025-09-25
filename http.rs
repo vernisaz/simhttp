@@ -489,7 +489,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         }
                                         
                                         let Ok((mut data,bl_kind,last,mut extra,mask,mut mask_pos,remain)) = decode_block(&mut buffer[0..len + reminder])
-                                            .or_else(|e| {LOGGER.lock().unwrap().error(&format!("decode bl err:{e}")); Err(e)}) else {
+                                            .inspect_err(|e| LOGGER.lock().unwrap().error(&format!("decode bl err:{e}"))) else {
                                             debug!("invalid block of {}, WS's closing", len + reminder);
                                             break 'serv_ep
                                         };
