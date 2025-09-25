@@ -20,7 +20,7 @@ The server is perfectly suitable for an embedded development. You can deploy it 
 developed in C or Rust.
 
 ## Building
-A RustBee script file is provided to build the server. There are 4 dependencies from the
+A [RustBee](https://github.com/vernisaz/rust_bee) script file is provided to build the server. There are 4 dependencies from the
 micro libraries (crate) pool. The repositories should be cloned and built first.
 
 - [scripts](https://github.com/vernisaz/simscript) it's only scripts required to build crates below
