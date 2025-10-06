@@ -113,6 +113,19 @@ fn main() {
                 logger.info(&format!{"log level set to {:?}", &level});
                 logger.set_level(level);
             }
+        } else if let Some(Text(val)) = log.get("type") {
+            let level = 0;
+            if val.contains("access") {
+                level =2
+            } else val.contains("error") {
+                level = 3
+            } else val.contains("debug") {
+                level = 1
+            } else val.contains("critical") {
+                level = 4
+            }
+            logger.set_level(level);
+            logger.info(&format!{"log level set to {:?}", val});
         }
     }
     let no_terminal = if let Some(Bool(val)) = env.get("no terminal") {
