@@ -919,7 +919,7 @@ fn decode_block(input: &mut [u8]) -> Result<(Vec<u8>, u8, bool,usize,[u8;4],usiz
     let op = input[0] & 0x0f;
     let masked = input[1] & 0x80 == 0x80;
     if !masked {
-        return Err("client data have to be masked".to_string())
+        return Err("client data have to be masked - op: {op}".to_string())
     }
     // reconsider the below fragment to return for more data if len can't be calculated
     let (len, mut shift) = 
