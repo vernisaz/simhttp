@@ -505,7 +505,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         }
                                         
                                         let Ok((mut data,bl_kind,last,mut extra,mask,mut mask_pos,remain)) = decode_block(&mut buffer[0..len + reminder])
-                                            .inspect_err(|e| LOGGER.lock().unwrap().error(&format!("decode bl err:{e}"))) else {
+                                            .inspect_err(|e| LOGGER.lock().unwrap().error(&format!("decode bl {len} + {reminder} - err:{e}"))) else {
                                             debug!("invalid block of {}, WS's closing", len + reminder);
                                             break 'serv_ep
                                         };
@@ -517,13 +517,14 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                             debug!("there are {extra} data in buffer for further processing");
                                             reminder = extra;
                                         } else {
+                                            debug!("required to read {extra} for bl {bl_kind} to complete initial {}", data.len());
                                             reminder = 0;
                                             while extra > 0 {
                                                 let len = match reader_stream.read(&mut buffer) {
                                                     Ok(len) => if len == 0 { break 'serv_ep} else { len },
                                                     Err(_) => break 'serv_ep,
                                                 };
-                                                debug!("incomplete bl {bl_kind} requires reading {extra} more, currently {len}");
+                                                debug!("incomplete bl {bl_kind} requires reading {extra} more, currently {len} od {}", data.len());
                                                 
                                                 for i in 0..len {
                                                     extra -= 1;
@@ -900,7 +901,7 @@ fn encode_block(input: &[u8]) -> Vec<u8> { // TODO add param - start, mid and th
             res.push(127 as u8); // not masked
             res.extend_from_slice(&(len as u64).to_be_bytes())
         }
-        _ => unreachable!("wrong {}", len) // 0 is filtered out to do not call the method
+        _ => unreachable!("wrong len: {len}") // 0 is filtered out to do not call the method
     }
     // no 4 bytes mask for server to client
     res.extend_from_slice(input);
@@ -974,7 +975,7 @@ fn decode_block(input: &mut [u8]) -> Result<(Vec<u8>, u8, bool,usize,[u8;4],usiz
     if remain && extra > 0 {
         input.copy_within(shift..buf_len, 0);
     }
-    Ok((res, op, last, extra,mask,curr_mask, remain))
+    Ok((res, op, last, extra, mask, curr_mask, remain))
 }
 
 fn response_message(code: u16) -> &'static str {
