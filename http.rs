@@ -513,15 +513,16 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         
                                         let Ok((mut data,bl_kind,last,mut extra,mask,mut mask_pos,remain)) = decode_block(&mut buffer[0..len + reminder])
                                             .inspect_err(|e| LOGGER.lock().unwrap().error(&format!("decode bl {len} + {reminder} - err:{e}"))) else {
-                                            debug!("invalid block of {}, WS's closing", len + reminder);
+                                            debug!("invalid block of {len} + {reminder}={}, WS's closing", len + reminder);
                                             break 'serv_ep
                                         };
                                         if data.is_empty() && extra == 0 && u32::from_be_bytes(mask) == 0 { // need more data to decode the buffer
+                                            debug!("need more data {reminder} - len: {len}");
                                             reminder += len;
                                             continue
                                         }
                                         if remain { // there are data in buffer
-                                            debug!("there are {extra} data in buffer for further processing");
+                                            debug!("there are {extra} byte(s) of data for further processing in the buffer");
                                             reminder = extra;
                                         } else {
                                             debug!("required to read {extra} for bl {bl_kind} to complete initial {}", data.len());
@@ -531,14 +532,14 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                                     Ok(len) => if len == 0 { break 'serv_ep} else { len },
                                                     Err(_) => break 'serv_ep,
                                                 };
-                                                debug!("incomplete bl {bl_kind} requires reading {extra} more, currently {len} of {} ({last})", data.len());
+                                                debug!("incomplete bl {bl_kind} requires reading {extra} more, currently {len} of {} last={last}", data.len());
                                                 
                                                 for i in 0..len {
                                                     extra -= 1;
                                                     //debug!("unmask {:x} ^ {:x}", buffer[i] , mask[mask_pos]);
                                                     data.push(buffer[i] ^ mask[mask_pos]);
                                                     mask_pos = (mask_pos + 1) % 4;
-                                                    if extra == 0 && i < len - 1 {
+                                                    if extra == 0 /*&& i < len - 1*/ {
                                                         reminder = len-i;
                                                         debug!("there are additional bytes {reminder} in buffer");
                                                         buffer.copy_within(i+1..len, 0);
