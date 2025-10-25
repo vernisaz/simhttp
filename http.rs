@@ -524,7 +524,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                                     Ok(len) => if len == 0 { break 'serv_ep} else { len },
                                                     Err(_) => break 'serv_ep,
                                                 };
-                                                debug!("incomplete bl {bl_kind} requires reading {extra} more, currently {len} od {}", data.len());
+                                                debug!("incomplete bl {bl_kind} requires reading {extra} more, currently {len} of {} ({last})", data.len());
                                                 
                                                 for i in 0..len {
                                                     extra -= 1;
