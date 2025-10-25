@@ -545,7 +545,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         complete = last;
                                         fin_data.append(&mut data);
                                     }
-                                    debug!("complete {complete} of kind {kind}");
+                                    debug!("complete {complete} -> {} of kind {kind}", fin_data.len());
                                     match kind {
                                         0 => { // not supporting continuation yet, ignore for now
                                             continue
