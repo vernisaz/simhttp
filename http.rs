@@ -540,7 +540,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                                     data.push(buffer[i] ^ mask[mask_pos]);
                                                     mask_pos = (mask_pos + 1) % 4;
                                                     if extra == 0 /*&& i < len - 1*/ {
-                                                        reminder = len-i;
+                                                        reminder = len-i-1;
                                                         debug!("there are additional bytes {reminder} in buffer");
                                                         buffer.copy_within(i+1..len, 0);
                                                         break
@@ -554,7 +554,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         complete = last;
                                         fin_data.append(&mut data);
                                     }
-                                    debug!("complete {complete} -> {} of kind {kind}", fin_data.len());
+                                    debug!("complete {complete} -> {} of kind {kind} remained {reminder}", fin_data.len());
                                     match kind {
                                         0 => { // not supporting continuation yet, ignore for now
                                             continue
@@ -928,7 +928,7 @@ fn decode_block(input: &mut [u8]) -> Result<(Vec<u8>, u8, bool,usize,[u8;4],usiz
     let op = input[0] & 0x0f;
     let masked = input[1] & 0x80 == 0x80;
     if !masked {
-        return Err("client data have to be masked - op: {op}".to_string())
+        return Err(format!("client data have to be masked - op: {op}"))
     }
     // reconsider the below fragment to return for more data if len can't be calculated
     let (len, mut shift) = 
