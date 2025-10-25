@@ -493,10 +493,17 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     let mut fin_data = vec![];
                                     // TODO incorporate all logic in this while to decode_block and hide the mask exposing
                                     while !complete {
-                                        let len = match reader_stream.read(&mut buffer[reminder..]) {
-                                            Ok(len) => if len == 0 { break 'serv_ep} else { len },
-                                            Err(_) => break 'serv_ep,
-                                        };
+                                        // reminder can be enouth to start decoding the block
+                                        let len;
+                                        if reminder >= 8 {
+                                            len = reminder;
+                                            reminder = 0
+                                        } else {
+                                            len = match reader_stream.read(&mut buffer[reminder..]) {
+                                                Ok(len) => if len == 0 { break 'serv_ep} else { len },
+                                                Err(_) => break 'serv_ep,
+                                            };
+                                        }
                                         debug!("decode bl of {len}/{reminder}");
                                         if reminder  + len <= 2 {
                                             // read more data because even close(8) has to include mask
