@@ -63,7 +63,11 @@ address have to be different in the configurations.
 Just launch **simhttp**. Press 'q' for stop. (See a note in the [issues](https://github.com/vernisaz/simhttp/blob/master/issues.md))
 
 If you run _simhttp_ in a *SSH* session and want to keep it running after the session gets closed, then use -
-`"no terminal": true` property in the configuration and launch it with ending `&`. The server will be less verbose in the case.
+`"no terminal": true` property in the configuration file and launch it with ending `&`. The server will be less verbose in the case.
+
+> ./simhttp & disown
+
+Use `disown` to keep the server running if SSH session was disconnected.
 If you still want to see an occasional server output to
 the console, then run it using _nohup_ utility as (`"no terminal": false`):
 
