@@ -90,8 +90,12 @@ and then,
 
 [bee.7b](./bee.7b) contains details how to run it in the background under Windows.
 
+You can also run the server as a service on Windows, Linux, BSD, and Mac.
+How it can be done, described in [the document](https://github.com/vernisaz/simcom/blob/master/doc/PIs.md).
+
 ## Websocket
 The server provides a limited support of WebSocket protocol as WS-CGI. Only UTF-8 string packets are supported.
+
 
 ## How to compare it to miniserve and other Rust webservers
 If you didn't check [miniserve](https://github.com/svenstaro/miniserve/tree/master) yet, then do it now. More likely you will be satisfied with it.
