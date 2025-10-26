@@ -5,10 +5,10 @@ It is a web server for personal Rust web applications. It supports servicing fil
 
 ## History
 I've implemented TJWS back in 1999. It has the purpose to run and debug Java web applications. 
-However an interest to Java dropped recent years, so I decided to implement a similar purpose server in Rust.
+However the interest to Java dropped recent years, so I decided to implement a similar purpose server in Rust.
 
 TRWS - is a successor of TJWS, but instead of servlets it runs CGI web applications which can be written in
-any language including Rust. It also supports websocket endpoints. They are applications supporting OS piping.
+any language including Rust. It also supports websocket endpoints. They are applications supporting OS piping mechanism.
 Such approach is more beneficial than offered by other
 Rust web servers, because doesn't require to rebuild the entire server at every serviced app change. 
 
@@ -55,7 +55,7 @@ The server is built by executing _rb_ in its repository.
 
 ## Configuring
 One JSON file is used for configuring the server. The file has to be in the current working directory the server ran from.
-An example of [env.conf](https://github.com/vernisaz/simhttp/blob/master/env.conf) file is self describing.
+An example of [env.conf](https://github.com/vernisaz/simhttp/blob/master/env.conf) file is a self describing.
 The same executable of the server can be used for multiple configurations. Obviously the listening port or/and the binding
 address have to be different in the configurations.
 
@@ -97,4 +97,4 @@ I couldn't do without _simhttp_. Simhttp is decoupled from deployed Rust applica
 of the server and even dynamically.
 
 ## Status
-Current version is SimHTTP/1.23b58. It's a beta version.
+Current version is SimHTTP/1.23b59. It's a beta version.
