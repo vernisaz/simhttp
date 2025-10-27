@@ -69,7 +69,7 @@ If you run _simhttp_ in a *SSH* session and want to keep it running after the se
 
 Use `disown` to keep the server running if SSH session was disconnected.
 If you still want to see an occasional server output to
-the console, then run it using _nohup_ utility as (`"no terminal": false`):
+the console, set `"no terminal": false`, and then run it using _nohup_ utility as:
 
 > nohup simhttp &
 
