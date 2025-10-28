@@ -17,7 +17,7 @@ Obviously SimHttp is CI/CD friendly.
 A serviced Rust app can run as in CLI mode as in a web mode without any change.
 
 The server is perfectly suitable for an embedded development. You can deploy it on an embedded platform. CGI endpoints can be
-developed in C or Rust.
+developed in C, Swift, or Rust.
 
 ## Building
 A [RustBee](https://github.com/vernisaz/rust_bee) script file is provided to build the server. There are 4 dependencies from the
@@ -67,7 +67,7 @@ If you run _simhttp_ in a *SSH* session and want to keep it running after the se
 
 > ./simhttp & disown
 
-Use `disown` to keep the server running if SSH session was disconnected.
+Use `disown` to keep the server running when SSH session was disconnected.
 If you still want to see an occasional server output to
 the console, set `"no terminal": false`, and then run it using _nohup_ utility as:
 
