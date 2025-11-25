@@ -87,8 +87,8 @@ impl LogFile {
         LogFile { currnet_line: 0,
             current_chunk: 0,
             path: None,
-            name: name,
-            file: file,
+            name,
+            file,
         }
     }
     
@@ -106,8 +106,8 @@ impl LogFile {
         LogFile { currnet_line: 0,
             current_chunk: 0,
             path: Some(path),
-            name: name,
-            file: file,
+            name,
+            file,
         }
     }
     
@@ -122,10 +122,8 @@ impl LogFile {
         let mut copy_path = path.clone();
         copy_path.set_extension( format!{"log.{:05}", self.current_chunk});
 
-        if fs::copy(path, copy_path).is_ok() {
-            if self.file.rewind().is_ok() {
-                let _ = self.file.set_len(0);
-            }
+        if fs::copy(path, copy_path).is_ok() && self.file.rewind().is_ok() {
+            let _ = self.file.set_len(0);
         }
     }
 }

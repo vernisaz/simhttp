@@ -12,7 +12,7 @@ use std::{
     collections::HashMap,
     process::{Stdio,Command},
     time::{SystemTime,UNIX_EPOCH,Duration},
-    env, convert::TryInto, cmp,
+    env, convert::TryInto, cmp, error::Error as GenError,
 };
 use simtpool::ThreadPool;
 use simjson::JsonData::{Num,Text,Data,Arr,Bool,self};
@@ -241,9 +241,9 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
     line.truncate(len-2); // \r\n
     let request_line = line.clone();
     let mut parts  = request_line.splitn(3, ' '); // split_whitespace
-    let method = parts.next().ok_or(io::Error::new(ErrorKind::Other, "Invalid request"))?; // can't be due len check
-    let mut path = parts.next().ok_or(io::Error::new(ErrorKind::Other, "Invalid request - no path"))?.to_string();
-    let protocol = parts.next().ok_or(io::Error::new(ErrorKind::Other, "Invalid request - no protocol"))?;
+    let method = parts.next().ok_or(io::Error::other("invalid request"))?; // can't be due len check
+    let mut path = parts.next().ok_or(io::Error::other("invalid request - no path"))?.to_string();
+    let protocol = parts.next().ok_or(io::Error::other("invalid request - no protocol"))?;
     let query = match path.find('?') {
         Some(qp) => {
             let query = &path[qp+1..].to_string();
@@ -410,7 +410,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
             extra = Some(buffer)
         }
         if !websocket && env. get("HTTP_UPGRADE") == Some(&"websocket".to_string()) {
-            return report_error(404,&request_line, &mut stream)
+            return report_error(404, &request_line, &stream)
         }
         Some(env)
     } else { 
@@ -463,7 +463,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                          .stdout(Stdio::piped())
                          .stdin(Stdio::piped())
                          .stderr(Stdio::piped())
-                         .current_dir(&path_translated.parent().unwrap())
+                         .current_dir(path_translated.parent().unwrap())
                          .env_clear() // can be a flag telling to purge system env or not
                         .envs(cgi_env).spawn()?;
                         
@@ -587,7 +587,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         
                                     }
                                     // TODO think how pass a block size to endpoint as: 1. in from 4 chars len, or 2. end mark like 0x00
-                                    if stdin.write_all(&fin_data.as_slice()).is_err() {break};
+                                    if stdin.write_all(fin_data.as_slice()).is_err() {break};
                                     stdin.flush().unwrap();
                                     //let string = String::from_utf8_lossy(&data);
                                     //eprintln!("entered {string}");
@@ -662,18 +662,16 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                      .stdout(Stdio::piped())
                      .stdin(Stdio::piped())
                      .stderr(Stdio::piped())
-                     .current_dir(&path_translated.parent().unwrap())
+                     .current_dir(path_translated.parent().unwrap())
                      .env_clear()
                     .envs(cgi_env.unwrap()).spawn()?;
-                    if let Some(extra) = extra {
-                        if let Some(mut stdin) = load.stdin.take() {
-                            thread::spawn(move || { // TODO consider using a separate thread pool
-                                match stdin.write_all(&extra) {
-                                    Err(err) => LOGGER.lock().unwrap().error(&format!{"can't write to SGI script: {err}"}),
-                                    _=> () //eprintln!{"written: {}", String::from_utf8_lossy( &extra)}
-                                }
-                            });
-                        }
+                    if let Some(extra) = extra && let Some(mut stdin) = load.stdin.take() {
+                        thread::spawn(move || { // TODO consider using a separate thread pool
+                            match stdin.write_all(&extra) {
+                                Err(err) => LOGGER.lock().unwrap().error(&format!{"can't write to SGI script: {err}"}),
+                                _=> () //eprintln!{"written: {}", String::from_utf8_lossy( &extra)}
+                            }
+                        });
                     }
                     let _ = stream.set_read_timeout(None);
                     let output = load.wait_with_output()?;
@@ -738,11 +736,9 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 if key == "location" {
                                     code_num = 302;
                                     status = format!{"{protocol} 302 Found\r\n"}
-                                } else if key == "status" {
-                                    if let Some((code, _)) = val.split_once(' ') {
-                                        code_num = code.parse::<u16>().unwrap_or(PARSE_NUM_ERR); // should reject the request if status code unparsable
-                                        status = format!{"{protocol} {val}\r\n"}
-                                    }
+                                } else if key == "status" && let Some((code, _)) = val.split_once(' ') {
+                                    code_num = code.parse::<u16>().unwrap_or(PARSE_NUM_ERR); // should reject the request if status code unparsable
+                                    status = format!{"{protocol} {val}\r\n"}
                                 }
                                 if key != "content-length" && key != "status" {
                                     headers.push_str(&format!{"{header}\r\n"})
@@ -763,21 +759,19 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis(), output.rest_len()})
                 } else {
                     let modified = fs::metadata(&path_translated)?.modified()?;
-                    if since > 0 {
-                        if modified.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs() < since {
-                            let response =
-                                format!("{protocol} 304 {}\r\n\r\n", response_message(304));
-                            stream.write_all(response.as_bytes())?;
-                            // log
-                            LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" 304 0", 
-                                SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()});
-                            return Ok(())    
-                        }
+                    if since > 0 && modified.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs() < since {
+                        let response =
+                            format!("{protocol} 304 {}\r\n\r\n", response_message(304));
+                        stream.write_all(response.as_bytes())?;
+                        // log
+                        LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" 304 0", 
+                            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()});
+                        return Ok(())    
                     }
                     let mut f = File::open(&path_translated)?;
                     let mut buffer = Vec::new();
                     let c_type =
-                    if let Some(ref ext) = path_translated. extension() {
+                    if let Some(ext) = path_translated. extension() {
                         MIME.get().unwrap().get(ext.to_str().unwrap())
                     } else {None};
                     // read the whole file
@@ -798,15 +792,15 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                 }
             }
             _ => {
-                report_error(404,&request_line, &mut stream)?
+                report_error(404,&request_line, stream)?
             }
         }
     } else { // PUT DELETE HEAD TRACE OPTIONS PATCH CONNECT
         // unsupported method
-        report_error(405,&request_line, &mut stream)?
+        report_error(405, &request_line, stream)?
     }
     if close {
-        Err(Error::new(ErrorKind::ConnectionReset, "requested close"))
+        Err(Error::other("requested close"))
     } else {
         Ok(())
     }
@@ -858,7 +852,7 @@ fn report_error(code: u16, request_line: &str, mut stream: &TcpStream) -> io::Re
         format!("{protocol} {code} {msg}\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\n\r\n");
 
     stream.write_all(response.as_bytes())?;
-    stream.write_all(&contents)?;
+    stream.write_all(contents)?;
     // log
     let addr =
         match stream.peer_addr() {
@@ -870,13 +864,12 @@ fn report_error(code: u16, request_line: &str, mut stream: &TcpStream) -> io::Re
     Ok(())
 }
 
-fn encode_ping(input: &[u8]) -> io::Result<Vec<u8>> { 
+fn encode_ping(input: &[u8]) -> Result<Vec<u8>, Box<dyn GenError>> { 
     let len = input.len();
     if len > 126 {
-        return Err(io::Error::new(ErrorKind::Other, "Payload len for ping > 126"))
+        return Err("payload len for ping > 126".into())
     }
-    let mut res = vec![];
-    res.reserve(len+2);
+    let mut res = Vec::with_capacity(len+2);
     res.push(0x89_u8); // no cont (last), ping
     match len as u8 {
         0..126 => {
