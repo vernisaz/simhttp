@@ -275,7 +275,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                     None
                 };
                 if cfg!(windows) {
-                    name = name + ".exe";}
+                    name += ".exe";}
                 path_translated = Some(rslash::adjust_separator(e.path.clone() + MAIN_SEPARATOR_STR + &name))
             } else if e.websocket && (path == e.web_path || 
                     path[e.web_path.len()..e.web_path.len()+1] == *"/") {
@@ -294,7 +294,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                 path_translated = Some(ws_file.to_str().unwrap().to_string());
                // eprintln!{"mapping for ws as  {path_translated:?}"}
             } else {
-                if path.chars().rev().nth(0) == Some('/') {
+                if path.chars().rev().next() == Some('/') {
                     path += "index.html"
                 }
                 let path_buf =  PathBuf::from(&e.path);
@@ -320,7 +320,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
         let mut env : HashMap<String, String> = if preserve_env {
             env::vars().collect()
         } else {
-            env::vars().filter(|&(ref k, _)|
+            env::vars().filter(|(k, _)|
              k != "PATH").collect()
         };
         // CGI spec: https://datatracker.ietf.org/doc/html/rfc3875
@@ -410,7 +410,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
             extra = Some(buffer)
         }
         if !websocket && env. get("HTTP_UPGRADE") == Some(&"websocket".to_string()) {
-            return report_error(404, &request_line, &stream)
+            return report_error(404, &request_line, stream)
         }
         Some(env)
     } else { 
@@ -887,8 +887,7 @@ fn encode_ping(input: &[u8]) -> Result<Vec<u8>, Box<dyn GenError>> {
 fn encode_block(input: &[u8]) -> Vec<u8> { // TODO add param - start, mid and the last block
     let len = input.len();
     //eprintln!("encoding bl {len}");
-    let mut res = vec![];
-    res.reserve(len+5);
+    let mut res = Vec::with_capacity(len+5);
     res.push(0x81_u8); // no cont (last), text
     match len as u64 {
         1..126 => {
