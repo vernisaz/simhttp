@@ -157,10 +157,8 @@ fn main() {
     if let Some(Arr(mime)) = env.get("mime") {
         for el in mime {
             if let Data(el) = el {
-                if let Some(Text(en)) = el.get("ext") {
-                    if let Some(Text(typ)) = el.get("type") {
-                        mime2.insert(en.to_string(),typ.to_string());
-                    }
+                if let Some(Text(en)) = el.get("ext") && let Some(Text(typ)) = el.get("type") {
+                    mime2.insert(en.to_string(),typ.to_string());
                 }
             }
         } 
@@ -294,7 +292,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                 path_translated = Some(ws_file.to_str().unwrap().to_string());
                // eprintln!{"mapping for ws as  {path_translated:?}"}
             } else {
-                if path.chars().rev().next() == Some('/') {
+                if path.chars().next_back() == Some('/') {
                     path += "index.html"
                 }
                 let path_buf =  PathBuf::from(&e.path);
