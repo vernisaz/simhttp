@@ -92,7 +92,7 @@ target package {
     <main>
       <p>Congratulations! You've successfully installed the server</p>
     </main>
-    <footer>&copy; <script>document.write(new Date().getFullYear())</script> D Rogatkin</footer>
+    <footer>SimHTTP v${version} &copy; <script>document.write(new Date().getFullYear())</script> D Rogatkin</footer>
 </body>
 </html>",
 	-B ${project},
