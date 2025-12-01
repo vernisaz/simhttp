@@ -156,10 +156,9 @@ fn main() {
     let mut mime2 = HashMap::new(); 
     if let Some(Arr(mime)) = env.get("mime") {
         for el in mime {
-            if let Data(el) = el {
-                if let Some(Text(en)) = el.get("ext") && let Some(Text(typ)) = el.get("type") {
-                    mime2.insert(en.to_string(),typ.to_string());
-                }
+            if let Data(el) = el &&
+                let Some(Text(en)) = el.get("ext") && let Some(Text(typ)) = el.get("type") {
+                mime2.insert(en.to_string(),typ.to_string());
             }
         } 
     };
@@ -292,7 +291,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                 path_translated = Some(ws_file.to_str().unwrap().to_string());
                // eprintln!{"mapping for ws as  {path_translated:?}"}
             } else {
-                if path.chars().next_back() == Some('/') {
+                if path.ends_with('/') {
                     path += "index.html"
                 }
                 let path_buf =  PathBuf::from(&e.path);
@@ -620,7 +619,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                             Err(_) => break,
                                             _ => heartbeat_stream.flush().unwrap(),
                                         }
-                                        if let Ok(_) = recv.recv_timeout(Duration::from_secs(60*PING_INTERVAL.get().unwrap())) {
+                                        if recv.recv_timeout(Duration::from_secs(60*PING_INTERVAL.get().unwrap())).is_ok() {
                                             break; // Handle the interruption
                                         }
                                         // check if pong with count received
@@ -664,12 +663,9 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                      .env_clear()
                     .envs(cgi_env.unwrap()).spawn()?;
                     if let Some(extra) = extra && let Some(mut stdin) = load.stdin.take() {
-                        thread::spawn(move || { // TODO consider using a separate thread pool
-                            match stdin.write_all(&extra) {
-                                Err(err) => LOGGER.lock().unwrap().error(&format!{"can't write to SGI script: {err}"}),
-                                _=> () //eprintln!{"written: {}", String::from_utf8_lossy( &extra)}
-                            }
-                        });
+                        thread::spawn(move || // TODO consider using a separate thread pool
+                            if let Err(err) = stdin.write_all(&extra) { LOGGER.lock().unwrap().error(&format!{"can't write to SGI script: {err}"}) }
+                        );
                     }
                     let _ = stream.set_read_timeout(None);
                     let output = load.wait_with_output()?;
@@ -774,9 +770,11 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                     } else {None};
                     // read the whole file
                     f.read_to_end(&mut buffer)?;
-                    let c_type = if c_type.is_none() {
+                    
+                    let c_type = if let Some(c_type) = c_type {
+                        c_type } else {
                         "octet-stream"
-                    } else { c_type.unwrap() };
+                    } ;
                     let time = http_format_time(modified);
                     let length = buffer.len();
                     let response =
@@ -892,11 +890,11 @@ fn encode_block(input: &[u8]) -> Vec<u8> { // TODO add param - start, mid and th
             res.push(len as u8); // not masked
         }
         126..0x10000_u64 => { // u16::MAX
-            res.push(126 as u8); // not masked
+            res.push(126_u8); // not masked
             res.extend_from_slice(&(len as u16).to_be_bytes())
         }
         0x10000_u64..=u64::MAX => {
-            res.push(127 as u8); // not masked
+            res.push(127_u8); // not masked
             res.extend_from_slice(&(len as u64).to_be_bytes())
         }
         _ => unreachable!("wrong len: {len}") // 0 is filtered out to do not call the method
