@@ -93,6 +93,13 @@ and then,
 You can also run the server as a service on Windows, Linux, BSD, and Mac.
 How it can be done, described in [the document](https://github.com/vernisaz/simcom/blob/master/doc/PIs.md).
 
+## Running as service
+The server can run as a service on all supported platforms. How to do that on Linux platform described [there](https://github.com/vernisaz/simcom/blob/master/doc/PIs.md#run-simhttp-as-a-service).
+
+Regarding Windows, use a service wrapper, or update my service C code from [there](https://github.com/drogatkin/TJWS2/blob/master/1.x/win-service/servservice.cpp) to Rust.
+
+Mac service should look similar to FreeBSD and I need to investigate details.
+
 ## Websocket
 The server provides a limited support of WebSocket protocol as WS-CGI. Only UTF-8 string packets are supported.
 
