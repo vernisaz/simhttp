@@ -1,14 +1,14 @@
 extern crate simtpool;
 extern crate simjson;
-extern crate rslash;
 extern crate simweb;
+extern crate rslash;
 use std::{
     fs::{self,File},
     io::{prelude::*, Error, ErrorKind, BufReader, self},
     net::{TcpListener, TcpStream,ToSocketAddrs,Shutdown},
     thread,
     sync::{atomic::{AtomicBool,Ordering}, Arc,Mutex,LazyLock,OnceLock,mpsc},
-    path::{MAIN_SEPARATOR_STR,PathBuf},
+    path::{PathBuf},
     collections::HashMap,
     process::{Stdio,Command},
     time::{SystemTime,UNIX_EPOCH,Duration},
@@ -26,6 +26,8 @@ struct Mapping {
     web_path: String,
     path: String,
     cgi: bool,
+    wrapper: Option<String>,
+    ext: Option<String>,
     websocket: bool,
 }
 
@@ -84,12 +86,12 @@ fn init_ping_interval(interval_mins: u64) -> () {
 
 fn main() {
     let Ok(env) = fs::read_to_string("env.conf") else {
-        eprintln!{"No env file in the current directory"}
+        eprintln!{"No env.conf file in the current directory"}
         return
     };
     let env = simjson::parse(&env);
     let Data(env) = env else {
-        eprintln!{"Corrupted env file in the current directory"}
+        eprintln!{"Corrupted env.conf file in the current directory"}
         return
     };
     if let Some(Data(log)) = env.get("log") {
@@ -253,28 +255,14 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
     let mut path_translated = None;
     let mut cgi = false;
     let mut websocket = false;
-    let mut name = "".to_string();
+    let mut script = String::new();
     let mut path_info = None;
+    let mut wrapper = None;
     let mapping = MAPPING.get().unwrap();
     let mut preserve_env = false;
     for e in mapping {
         if path.starts_with(&e.web_path) {
-            cgi = e.cgi;
-            if cgi  {
-                let mut cgi_file = PathBuf::new();
-                cgi_file.push(e.path.clone());
-                name = path[e.web_path.len()..].to_string();
-                path_info = if let Some(pos) = name.find('/') {
-                    let temp = name[pos..].to_string();
-                    name = name[..pos].to_string();
-                    Some(temp)
-                } else {
-                    None
-                };
-                if cfg!(windows) {
-                    name += ".exe";}
-                path_translated = Some(rslash::adjust_separator(e.path.clone() + MAIN_SEPARATOR_STR + &name))
-            } else if e.websocket && (path == e.web_path || 
+            if e.websocket && (path == e.web_path || 
                     path[e.web_path.len()..e.web_path.len()+1] == *"/") {
                 websocket = true;
                 preserve_env = !e.cgi;
@@ -292,18 +280,58 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                // eprintln!{"mapping for ws as  {path_translated:?}"}
             } else {
                 if path.ends_with('/') {
-                    path += "index.html"
-                }
-                let path_buf =  PathBuf::from(&e.path);
-                let mut sanitized_parts = PathBuf::new();
-                for part in  rslash::to_unix_separator(path[e.web_path.len()..].to_string()).split('/') {
-                    match part {
-                        ".." => {sanitized_parts.pop();}
-                        "." => (),
-                        some => sanitized_parts.push(some)
+                    if e.cgi && e.ext.is_some() {
+                        path += &("index.".to_owned() + &e.ext.clone().unwrap())
+                    } else {
+                        path += "index.html"
                     }
                 }
-                path_translated = Some( path_buf.join(sanitized_parts).to_str().unwrap().to_string());
+                // it can be better to keep web_path as parts
+                if e.cgi {
+                    let ext = e.ext.clone().unwrap_or_default();
+                    
+                    // possibly normalize separators here
+                    let mut script_parts = path[e.web_path.len()..].split('/').into_iter();
+                    let mut translated = PathBuf::from(e.path.clone());
+                    while let Some(part) = script_parts.next() {
+                        translated = translated.join(part);
+                        if translated.exists() {
+                            if translated.is_dir() {
+                                continue
+                            } else if translated.is_file() || cfg!(windows) && translated.set_extension("exe") && translated.is_file() { 
+                                if ext.is_empty() || !ext.is_empty() && part.len() > ext.len() + 1 && part.ends_with(&ext) && part[part.len()-ext.len()-1..part.len()-ext.len()] == *"." {
+                                    script = part.to_string();
+                                    let mut acc = String::new();
+                                    while let Some (e) =script_parts.next() {
+                                        acc.push('/');
+                                        acc.push_str(e)
+                                    } 
+                                    if !acc.is_empty() {
+                                        path_info = Some(acc)
+                                    }
+                                    path_translated = translated.to_str().map(|s| s.to_string());
+                                    cgi = true;
+                                    wrapper = e.wrapper.clone();
+                                    break
+                                }
+                            } else {
+                                return Err(Error::other("script part component doesn't exist"))
+                            }
+                        }
+                    }
+                }
+                if script.is_empty() {
+                    let path_buf =  PathBuf::from(&e.path);
+                    let mut sanitized_parts = PathBuf::new();
+                    for part in  simweb::as_web_path(&mut path[e.web_path.len()..].to_string()).split('/') {
+                        match part {
+                            ".." => {sanitized_parts.pop();}
+                            "." => (),
+                            some => sanitized_parts.push(some)
+                        }
+                    }
+                    path_translated = Some( path_buf.join(sanitized_parts).to_str().unwrap().to_string());
+                }
                // eprintln!{"mapping found as {path_translated:?}"}
             }
             break
@@ -359,8 +387,8 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
             
             env.insert("PATH_TRANSLATED".to_string(), path_translated.to_str().unwrap().to_string());
         }
-        if !name.is_empty() {
-            env.insert("SCRIPT_NAME".to_string(), name);
+        if !script.is_empty() {
+            env.insert("SCRIPT_NAME".to_string(), script);
         }
         line.clear();
         while 2 < buf_reader.read_line(&mut line)? {
@@ -432,13 +460,13 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
             line.clear();
         }
         if content_len > 0 {
-            std::io::copy(&mut buf_reader.by_ref().take(content_len), &mut std::io::sink())?;
+            io::copy(&mut buf_reader.by_ref().take(content_len), &mut std::io::sink())?;
             //buf_reader.seek_relative(content_len)?
         }
         None };
         
     if method == "GET" || method == "POST" {
-       // eprintln!{"servicing {method} to {path_translated:?} {cgi} {websocket}"}
+        // eprintln!{"servicing {method} to {path_translated:?} {cgi} {websocket}"}
         match path_translated {
             Some(ref path_translated) if PathBuf::from(&path_translated).is_file() => {
                 let path_translated = PathBuf::from(&path_translated);
@@ -655,13 +683,26 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         load.wait().unwrap();
                         return Err(Error::new(ErrorKind::BrokenPipe, "Websocket closed")) // force to close the connection and don't try to reuse
                     }
-                    let mut load = Command::new(&path_translated)
-                     .stdout(Stdio::piped())
-                     .stdin(Stdio::piped())
-                     .stderr(Stdio::piped())
-                     .current_dir(path_translated.parent().unwrap())
-                     .env_clear()
-                    .envs(cgi_env.unwrap()).spawn()?;
+                    let mut load = 
+                    if let Some(wrapper) = wrapper {
+                        Command::new(wrapper)
+                         .stdout(Stdio::piped())
+                         .stdin(Stdio::piped())
+                         .stderr(Stdio::piped())
+                         .arg(&path_translated)
+                         .current_dir(path_translated.parent().unwrap())
+                         .env_clear()
+                        .envs(cgi_env.unwrap()).spawn()?
+                    } else {
+                        Command::new(&path_translated)
+                         .stdout(Stdio::piped())
+                         .stdin(Stdio::piped())
+                         .stderr(Stdio::piped())
+                         .current_dir(path_translated.parent().unwrap())
+                         .env_clear()
+                        .envs(cgi_env.unwrap()).spawn()?
+                    };
+                    
                     if let Some(extra) = extra && let Some(mut stdin) = load.stdin.take() {
                         thread::spawn(move || // TODO consider using a separate thread pool
                             if let Err(err) = stdin.write_all(&extra) { LOGGER.lock().unwrap().error(&format!{"can't write to SGI script: {err}"}) }
@@ -679,7 +720,12 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                     let status = output.next();
                     if status.is_none() { // no headers
                         let len = output.rest_len() ;
-                        stream.write_all(format!{"{protocol} 200 OK\r\nContent-Length: {len}\r\n\r\n"}.as_bytes())?;
+                        let text_html = "text/html".to_string();
+                        let c_type = 
+                        if let Some(ext) = path_translated. extension() {
+                            MIME.get().unwrap().get(ext.to_str().unwrap()).unwrap_or_else(|| &text_html)
+                        } else {&text_html};
+                        stream.write_all(format!{"{protocol} 200 OK\r\nContent-Type: {c_type}\r\nContent-Length: {len}\r\n\r\n"}.as_bytes())?;
                         if len > 0 {
                             stream.write_all(&output.rest()).unwrap()
                         }
@@ -722,7 +768,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 };
                                 format!{"{protocol} {code} {msg}\r\n"}
                             };
-                        
+                        let mut was_content_type = false;
                         while let Some(mut header)  = output.next() {
                             header = header.trim().to_string(); // consider simple trunc(2)
                             if let Some((key,val)) = header.split_once(": ") {
@@ -733,11 +779,16 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 } else if key == "status" && let Some((code, _)) = val.split_once(' ') {
                                     code_num = code.parse::<u16>().unwrap_or(PARSE_NUM_ERR); // should reject the request if status code unparsable
                                     status = format!{"{protocol} {val}\r\n"}
+                                } else if key == "content-type" {
+                                    was_content_type = true;
                                 }
                                 if key != "content-length" && key != "status" {
                                     headers.push_str(&format!{"{header}\r\n"})
                                 } 
                             }
+                        }
+                        if !was_content_type {
+                            headers.push_str("Content-Type: text/html\r\n")
                         }
                         stream.write_all(status.as_bytes())?;
                         stream.write_all(headers.as_bytes())?;
@@ -816,14 +867,16 @@ fn read_mapping(mapping: &Vec<JsonData>) -> Vec<Mapping> {
         let websocket = match e.get("WS-CGI") {
             Some(Bool(websocket)) => {
                     if *cgi && *websocket {
-                        LOGGER.lock().unwrap().warning(&format!{"When WS_CGI and CGI set to 'true' for {path}, ENV will be cleaned as for CGI."});
-                        //cgi = false
+                        LOGGER.lock().unwrap().warning(&format!{"Note: CGI overrules WS_CGI for {path}."});
                     }
                     websocket},
             _ => &false
         };
+        let ext = e.get("ext").map(|ext| if let Text(ext) = ext { Some(ext.clone())} else {None}).unwrap_or(None);
+        let wrapper =  e.get("engine").map(|wrapper| if let Text(wrapper) = wrapper { Some(wrapper.clone())} else {None}).unwrap_or(None);
         // TODO check for duplication web_path
-        res.push(Mapping{ web_path:if *websocket {path.to_string()} else {path.to_string()  + "/"}, path: trans.into(), cgi: *cgi, websocket: *websocket })
+        res.push(Mapping{ web_path:if *websocket {path.to_string()} else {path.to_string()  + "/"},
+            path: trans.into(), cgi: *cgi, websocket: *websocket, ext,  wrapper,  })
     }
     res.sort_by(|a, b| b.web_path.len().cmp(&a.web_path.len()));
     res

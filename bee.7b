@@ -4,8 +4,8 @@ common =..${~/~}simscript${~/~}comm-build.7b:file
 crate_dir=..${~/~}crates
 comp opts=[]
 
-version=1.23
-set_env(VERSION,SimHTTP/${version}b60)
+version=1.24
+set_env(VERSION,SimHTTP/${version}b63)
 
 if {
 	eq(${~os~},windows)
