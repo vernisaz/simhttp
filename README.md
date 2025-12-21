@@ -1,6 +1,6 @@
 # SimHttp - Rust web server (aka TRWS)
 ## Purpose
-It is a web server for personal Rust web applications. It supports servicing files and executing 
+It is a web server for personal Rust/Swift web applications. It supports servicing files and executing 
  [CGI](https://www.rfc-editor.org/rfc/rfc3875) scripts.
 
 ## History
@@ -8,7 +8,7 @@ I've implemented TJWS back in 1999. It has the purpose to run and debug Java web
 However the interest to Java dropped recent years, so I decided to implement a similar purpose server in Rust.
 
 TRWS - is a successor of TJWS, but instead of servlets it runs CGI web applications which can be written in
-any language including Rust. It also supports websocket endpoints. They are applications supporting OS piping mechanism.
+any language including Rust. It also supports websocket endpoints. They are applications supporting an OS piping mechanism.
 Such approach is more beneficial than offered by other
 Rust web servers, because doesn't require to rebuild the entire server at every serviced app change. 
 
@@ -69,7 +69,7 @@ If you run _simhttp_ in a *SSH* session and want to keep it running after the se
 
 Use `disown` to keep the server running when SSH session was disconnected.
 If you still want to see an occasional server output to
-the console, set `"no terminal": false`, and then run it using _nohup_ utility as:
+a console, set `"no terminal": false`, and then run it using _nohup_ utility as:
 
 > nohup simhttp &
 
