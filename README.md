@@ -112,4 +112,4 @@ I couldn't do without _simhttp_. Simhttp is decoupled from deployed Rust applica
 of the server and even dynamically.
 
 ## Status
-Current version is SimHTTP/1.23b59. It's a beta version.
+Current version is SimHTTP/1.24b61. It's a beta version.
