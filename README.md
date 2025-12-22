@@ -103,6 +103,8 @@ Mac service should look similar to FreeBSD and I need to investigate details.
 ## Websocket
 The server provides a limited support of WebSocket protocol as WS-CGI. Only UTF-8 string packets are supported.
 
+## Well known CGI scripts
+How to use such CGI scripts, as _php\_cgi_, is described [there](https://github.com/vernisaz/simcom/blob/master/doc/PIs.md).
 
 ## How to compare it to miniserve and other Rust webservers
 If you didn't check [miniserve](https://github.com/svenstaro/miniserve/tree/master) yet, then do it now. More likely you will be satisfied with it.
@@ -112,4 +114,4 @@ I couldn't do without _simhttp_. Simhttp is decoupled from deployed Rust applica
 of the server and even dynamically.
 
 ## Status
-Current version is SimHTTP/1.24b61. It's a beta version.
+Current version is SimHTTP/1.24b63. It's a beta version.
