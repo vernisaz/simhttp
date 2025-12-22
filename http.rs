@@ -28,6 +28,7 @@ struct Mapping {
     cgi: bool,
     wrapper: Option<String>,
     ext: Option<String>,
+    no_headers: bool,
     websocket: bool,
 }
 
@@ -258,6 +259,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
     let mut script = String::new();
     let mut path_info = None;
     let mut wrapper = None;
+    let mut no_headers = false;
     let mapping = MAPPING.get().unwrap();
     let mut preserve_env = false;
     for e in mapping {
@@ -291,7 +293,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                     let ext = e.ext.clone().unwrap_or_default();
                     
                     // possibly normalize separators here
-                    let mut script_parts = path[e.web_path.len()..].split('/').into_iter();
+                    let mut script_parts = path[e.web_path.len()..].split('/');
                     let mut translated = PathBuf::from(e.path.clone());
                     while let Some(part) = script_parts.next() {
                         translated = translated.join(part);
@@ -302,7 +304,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 if ext.is_empty() || !ext.is_empty() && part.len() > ext.len() + 1 && part.ends_with(&ext) && part[part.len()-ext.len()-1..part.len()-ext.len()] == *"." {
                                     script = part.to_string();
                                     let mut acc = String::new();
-                                    while let Some (e) =script_parts.next() {
+                                    for e in script_parts.by_ref() {
                                         acc.push('/');
                                         acc.push_str(e)
                                     } 
@@ -312,6 +314,9 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     path_translated = translated.to_str().map(|s| s.to_string());
                                     cgi = true;
                                     wrapper = e.wrapper.clone();
+                                    if e.no_headers {
+                                        no_headers = e.no_headers
+                                    }
                                     break
                                 }
                             } else {
@@ -668,11 +673,8 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 let Ok(len) = stdout.read(&mut buffer) else {
                                     break
                                 };
-                                if len == 0 { break }
-                                match writer_stream.write_all(encode_block(&buffer[0..len]).as_slice()) {
-                                    Err(_) => break,
-                                    _ => ()
-                                }
+                                //if len == 0 { break }
+                                if len == 0 || writer_stream.write_all(encode_block(&buffer[0..len]).as_slice()).is_err() { break }
                             }
                             match writer_stream.write_all(&[0x88,0]) {
                                 _ => ()
@@ -683,7 +685,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         load.wait().unwrap();
                         return Err(Error::new(ErrorKind::BrokenPipe, "Websocket closed")) // force to close the connection and don't try to reuse
                     }
-                    let mut load = 
+                    let mut load =
                     if let Some(wrapper) = wrapper {
                         Command::new(wrapper)
                          .stdout(Stdio::piped())
@@ -717,20 +719,8 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                    // println!{"load {}", String::from_utf8_lossy( &output.stdout)}
                     let mut output = CgiOut{load:output.stdout, pos:0};
                     let mut code_num = 200;
-                    let status = output.next();
-                    if status.is_none() { // no headers
-                        let len = output.rest_len() ;
-                        let text_html = "text/html".to_string();
-                        let c_type = 
-                        if let Some(ext) = path_translated. extension() {
-                            MIME.get().unwrap().get(ext.to_str().unwrap()).unwrap_or_else(|| &text_html)
-                        } else {&text_html};
-                        stream.write_all(format!{"{protocol} 200 OK\r\nContent-Type: {c_type}\r\nContent-Length: {len}\r\n\r\n"}.as_bytes())?;
-                        if len > 0 {
-                            stream.write_all(&output.rest()).unwrap()
-                        }
-                    } else {
-                        let status = status.unwrap();
+                    let status = if !no_headers {output.next()} else {None};
+                    if let Some(status) = status {
                         let mut headers = String::new();
                         // first line
                         let mut status =
@@ -798,6 +788,17 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         if len > 0 {
                             stream.write_all(&output.rest())?;
                             //eprintln!{"{:?}", String::from_utf8_lossy(&output.rest())}
+                        }
+                    } else {  // no headers
+                        let len = output.rest_len() ;
+                        let text_html = "text/plain".to_string();
+                        let c_type = 
+                        if let Some(ext) = path_translated. extension() {
+                            MIME.get().unwrap().get(ext.to_str().unwrap()).unwrap_or(&text_html)
+                        } else {&text_html};
+                        stream.write_all(format!{"{protocol} 200 OK\r\nContent-Type: {c_type}\r\nContent-Length: {len}\r\n\r\n"}.as_bytes())?;
+                        if len > 0 {
+                            stream.write_all(&output.all()).unwrap()
                         }
                     }
                     LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" {code_num} {}",
@@ -874,9 +875,10 @@ fn read_mapping(mapping: &Vec<JsonData>) -> Vec<Mapping> {
         };
         let ext = e.get("ext").map(|ext| if let Text(ext) = ext { Some(ext.clone())} else {None}).unwrap_or(None);
         let wrapper =  e.get("engine").map(|wrapper| if let Text(wrapper) = wrapper { Some(wrapper.clone())} else {None}).unwrap_or(None);
+        let no_headers = e.get("headerless").map(|val| if let Bool(val) = val { val } else {&false}).unwrap_or(&false);
         // TODO check for duplication web_path
         res.push(Mapping{ web_path:if *websocket {path.to_string()} else {path.to_string()  + "/"},
-            path: trans.into(), cgi: *cgi, websocket: *websocket, ext,  wrapper,  })
+            path: trans.into(), cgi: *cgi, websocket: *websocket, ext,  wrapper, no_headers: *no_headers, })
     }
     res.sort_by(|a, b| b.web_path.len().cmp(&a.web_path.len()));
     res
@@ -1114,7 +1116,7 @@ impl CgiOut {
     }
     
     fn rest_len(&mut self) -> usize {
-        if self.load.len() == 0 {
+        if self.load.is_empty() {
             0
         } else {
             self.load.len() - self.pos - 1
@@ -1123,6 +1125,10 @@ impl CgiOut {
     
     fn rest(&mut self) -> Vec<u8> {
         self.load[self.pos+1..].to_vec()
+    }
+    
+    fn all(&mut self) -> Vec<u8> {
+        self.load[..].to_vec()
     }
 }
 
