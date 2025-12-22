@@ -480,11 +480,6 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                     if !path_translated.is_absolute() {
                          path_translated = env::current_dir()?.join(path_translated)
                     }
-                    if let Some(ref mut cgi_env) = cgi_env {
-                        cgi_env.insert("SCRIPT_FILENAME".to_string(), path_translated.display().to_string());
-                        cgi_env.insert("REDIRECT_STATUS".to_string(), "CGI".to_string()); // from config
-                        cgi_env.insert("SERVER_ADDR".to_string(), format!("{}", stream.local_addr().unwrap().ip()));
-                    }
                     if websocket {
                         // https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API/Writing_WebSocket_servers
                         // generate a respose first
@@ -690,39 +685,21 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         load.wait().unwrap();
                         return Err(Error::new(ErrorKind::BrokenPipe, "Websocket closed")) // force to close the connection and don't try to reuse
                     }
-                    let as_input = false;
-                    //cgi_env.insert("REDIRECT_STATUS".to_string(), "CGI".to_string());
+                    if wrapper.is_some() && let Some(ref mut cgi_env) = cgi_env {
+                        cgi_env.insert("SCRIPT_FILENAME".to_string(), path_translated.display().to_string());
+                        cgi_env.insert("REDIRECT_STATUS".to_string(), "CGI".to_string()); // from config
+                        cgi_env.insert("SERVER_ADDR".to_string(), format!("{}", stream.local_addr().unwrap().ip()));
+                    }
                     let mut load =
                     if let Some(wrapper) = wrapper {
-                        if as_input {
-                            let mut script_file = std::fs::OpenOptions::new()
-                                .read(true)
-                                .open(&path_translated)?;
-                            let mut input_buffer: Vec<u8> = Vec::new();
-                            script_file
-                                .read_to_end(&mut input_buffer)?;
-                            if let Some(extra) = extra {
-                                input_buffer.extend(extra);
-                                
-                            }
-                            extra = Some(input_buffer);
-                            Command::new(wrapper)
-                             .stdout(Stdio::piped())
-                             .stdin(Stdio::piped())
-                             .stderr(Stdio::piped())
-                             .current_dir(path_translated.parent().unwrap())
-                             .env_clear()
-                            .envs(cgi_env.unwrap()).spawn()?
-                        } else {
                         Command::new(wrapper)
                          .stdout(Stdio::piped())
                          .stdin(Stdio::piped())
                          .stderr(Stdio::piped())
-                         //.arg(&path_translated)
+                         //.arg(&path_translated) TODO provide a mechanism how script reaches the wrapper
                          .current_dir(path_translated.parent().unwrap())
                          .env_clear()
                         .envs(cgi_env.unwrap()).spawn()?
-                        }
                     } else {
                         Command::new(&path_translated)
                          .stdout(Stdio::piped())
