@@ -297,31 +297,29 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                     let mut translated = PathBuf::from(e.path.clone());
                     while let Some(part) = script_parts.next() {
                         translated = translated.join(part);
-                        if translated.exists() {
-                            if translated.is_dir() {
-                                continue
-                            } else if translated.is_file() || cfg!(windows) && translated.set_extension("exe") && translated.is_file() { 
-                                if ext.is_empty() || !ext.is_empty() && part.len() > ext.len() + 1 && part.ends_with(&ext) && part[part.len()-ext.len()-1..part.len()-ext.len()] == *"." {
-                                    script = part.to_string();
-                                    let mut acc = String::new();
-                                    for e in script_parts.by_ref() {
-                                        acc.push('/');
-                                        acc.push_str(e)
-                                    } 
-                                    if !acc.is_empty() {
-                                        path_info = Some(acc)
-                                    }
-                                    path_translated = translated.to_str().map(|s| s.to_string());
-                                    cgi = true;
-                                    wrapper = e.wrapper.clone();
-                                    if e.no_headers {
-                                        no_headers = e.no_headers
-                                    }
-                                    break
+                        if translated.is_dir() {
+                            continue
+                        } else if translated.is_file() || cfg!(windows) && translated.set_extension("exe") && translated.is_file() { 
+                            if ext.is_empty() || !ext.is_empty() && part.len() > ext.len() + 1 && part.ends_with(&ext) && part[part.len()-ext.len()-1..part.len()-ext.len()] == *"." {
+                                script = part.to_string();
+                                let mut acc = String::new();
+                                for e in script_parts.by_ref() {
+                                    acc.push('/');
+                                    acc.push_str(e)
+                                } 
+                                if !acc.is_empty() {
+                                    path_info = Some(acc)
                                 }
-                            } else {
-                                return Err(Error::other("script part component doesn't exist"))
+                                path_translated = translated.to_str().map(|s| s.to_string());
+                                cgi = true;
+                                wrapper = e.wrapper.clone();
+                                if e.no_headers {
+                                    no_headers = e.no_headers
+                                }
+                                break
                             }
+                        } else {
+                            return Err(Error::other("script part component doesn't exist"))
                         }
                     }
                 }
@@ -964,7 +962,9 @@ fn encode_block(input: &[u8]) -> Vec<u8> { // TODO add param - start, mid and th
     res
 }
 
-fn decode_block(input: &mut [u8]) -> Result<(Vec<u8>, u8, bool,usize,[u8;4],usize,bool),String> {  
+type DecodedBlockData = (Vec<u8>, u8, bool,usize,[u8;4],usize,bool);
+
+fn decode_block(input: &mut [u8]) -> Result<DecodedBlockData,String> {  
     let buf_len = input.len();
     let mut res = Vec::new ();
     if buf_len < 2 { // actually wait for more data
