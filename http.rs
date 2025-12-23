@@ -153,7 +153,7 @@ fn main() {
     };
     
     let Some(Arr(mapping)) = env.get("mapping") else {
-        eprintln!{"No mapping properly  configured"}
+        eprintln!{"No mapping properly configured"}
         return
     };
     let mut mime2 = HashMap::new(); 
@@ -880,7 +880,7 @@ fn read_mapping(mapping: &Vec<JsonData>) -> Vec<Mapping> {
         let wrapper =  e.get("engine").map(|wrapper| if let Text(wrapper) = wrapper { Some(wrapper.clone())} else {None}).unwrap_or(None);
         let no_headers = e.get("headerless").map(|val| if let Bool(val) = val { val } else {&false}).unwrap_or(&false);
         // TODO check for duplication web_path
-        res.push(Mapping{ web_path:if *websocket {path.to_string()} else {path.to_string()  + "/"},
+        res.push(Mapping{ web_path:if *websocket {path.to_string()} else {if path.ends_with("/") {path.to_string()} else {path.to_string()  + "/"}},
             path: trans.into(), cgi: *cgi, websocket: *websocket, ext,  wrapper, no_headers: *no_headers, })
     }
     res.sort_by(|a, b| b.web_path.len().cmp(&a.web_path.len()));

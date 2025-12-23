@@ -5,7 +5,7 @@ crate_dir=..${~/~}crates
 comp opts=[]
 
 version=1.24
-set_env(VERSION,SimHTTP/${version}b63)
+set_env(VERSION,SimHTTP/${version}b64)
 
 if {
 	eq(${~os~},windows)
@@ -86,13 +86,38 @@ target package {
   <meta charset=\"UTF-8\">
   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
   <title>Simple HTTP</title>
+  <style>
+    :root {
+      --bg-color: #fff;
+      --text-color: #000;
+    }
+    footer {
+	    text-align: center;
+	    padding: 20px 0;
+	    width: 100%;
+	}
+	footer a {
+	    color: #4CAF50;
+	    text-decoration: none;
+	}
+	footer a:hover {
+	    text-decoration: underline;
+	}
+	@media (prefers-color-scheme: dark) {
+        :root {
+            --bg-color: #1e1e1e;
+            --text-color: #ccc;
+            color-scheme: dark;
+        }
+    }
+  </style>
 </head>
 <body>
     <header><h1>Rust HTTP Server</h1></header>
     <main>
       <p>Congratulations! You've successfully installed the server</p>
     </main>
-    <footer>SimHTTP v${version} &copy; <script>document.write(new Date().getFullYear())</script> D Rogatkin</footer>
+    <footer><a href=\"https://github.com/vernisaz/simhttp\">SimHTTP</a> v${version} &copy; <script>document.write(new Date().getFullYear())</script> D Rogatkin</footer>
 </body>
 </html>",
 	-B ${project},
