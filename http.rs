@@ -693,9 +693,9 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                     }
                     if let Some(ref mut cgi_env) = cgi_env && let Some(options) = env_ext {
                             for (name,value) in options {
-                                if name == "$SCRIPT_FILE" {
+                                if value == "$SCRIPT_FILE" {
                                     cgi_env.insert(name, path_translated.display().to_string());
-                                } else if name == "$IP" {
+                                } else if value == "$IP" {
                                     cgi_env.insert(name, format!("{}", stream.local_addr().unwrap().ip()));
                                 } else {
                                     cgi_env.insert(name, value);
