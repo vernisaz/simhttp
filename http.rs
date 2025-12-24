@@ -691,18 +691,16 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         load.wait().unwrap();
                         return Err(Error::new(ErrorKind::BrokenPipe, "Websocket closed")) // force to close the connection and don't try to reuse
                     }
-                    if wrapper.is_some() && let Some(ref mut cgi_env) = cgi_env {
-                        if let Some(options) = env_ext {
-                            for option in options {
-                                if option.1 == "$SCRIPT_FILE" {
-                                    cgi_env.insert(option.0.to_string(), path_translated.display().to_string());
-                                } else if option.1 == "$IP" {
-                                    cgi_env.insert(option.0.to_string(), format!("{}", stream.local_addr().unwrap().ip()));
+                    if let Some(ref mut cgi_env) = cgi_env && let Some(options) = env_ext {
+                            for (name,value) in options {
+                                if name == "$SCRIPT_FILE" {
+                                    cgi_env.insert(name, path_translated.display().to_string());
+                                } else if name == "$IP" {
+                                    cgi_env.insert(name, format!("{}", stream.local_addr().unwrap().ip()));
                                 } else {
-                                    cgi_env.insert(option.0, option.1);
+                                    cgi_env.insert(name, value);
                                 }
                             }
-                        }
                     }
                     let mut load =
                     if let Some(wrapper) = wrapper {
@@ -898,17 +896,15 @@ fn read_mapping(mapping: &Vec<JsonData>) -> Vec<Mapping> {
         let mut options_res = vec![];
         if let Some(Arr(options)) = e.get("options") {
             for option in options {
-                if let Data(option) = option {
-                    if let Some(Text(name)) = option.get("name") {
-                        if let Some(Text(value)) = option.get("value") {
-                            options_res.push((name.to_string(),value.to_string()))
-                        }
-                    }
+                if let Data(option) = option 
+                    && let Some(Text(name)) = option.get("name") 
+                    && let Some(Text(value)) = option.get("value") {
+                    options_res.push((name.to_string(),value.to_string()))
                 }
             }
         }
         // TODO check for duplication web_path
-        res.push(Mapping{ web_path:if *websocket {path.to_string()} else {if path.ends_with("/") {path.to_string()} else {path.to_string()  + "/"}},
+        res.push(Mapping{ web_path:if *websocket || path.ends_with("/") {path.to_string()} else {path.to_string()  + "/"},
             path: trans.into(), cgi: *cgi, websocket: *websocket, ext,  wrapper, no_headers: *no_headers,
             options: if options_res.is_empty() { None } else { Some(options_res)}, })
     }
