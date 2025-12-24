@@ -30,6 +30,7 @@ struct Mapping {
     ext: Option<String>,
     no_headers: bool,
     websocket: bool,
+    options: Option<Vec<(String,String)>>, // "Map" doesnt't give benefits over duplication keys 
 }
 
 struct CgiOut {
@@ -64,6 +65,9 @@ static PING_INTERVAL : OnceLock<u64> = OnceLock::new();
 const MAX_LINE_LEN : usize = 64*1024;
 
 const PARSE_NUM_ERR : u16 = 501;
+
+const TYPE_HTML: &str = "text/html";
+const TYPE_PLAIN : &str = "text/plain";
 
 fn init_mime(mime: HashMap<String,String>) {
     MIME.set(mime).unwrap();
@@ -262,8 +266,11 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
     let mut no_headers = false;
     let mapping = MAPPING.get().unwrap();
     let mut preserve_env = false;
+    //let mut map_entry = None;
+    let mut env_ext = None;
     for e in mapping {
         if path.starts_with(&e.web_path) {
+            //map_entry = Some(&e); // investigate why can't holp a pointer to map entry
             if e.websocket && (path == e.web_path || 
                     path[e.web_path.len()..e.web_path.len()+1] == *"/") {
                 websocket = true;
@@ -316,6 +323,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 if e.no_headers {
                                     no_headers = e.no_headers
                                 }
+                                env_ext = e.options.clone();
                                 break
                             }
                         } else {
@@ -429,7 +437,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
             line.clear()
         }
         if !env.contains_key("CONTENT_TYPE") {
-            env.insert("CONTENT_TYPE".to_string(), "text/plain".to_string());
+            env.insert("CONTENT_TYPE".to_string(), TYPE_PLAIN.to_string());
         }
         if content_len > 0 {
             let mut buffer = vec![0u8; content_len as usize];
@@ -684,9 +692,17 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         return Err(Error::new(ErrorKind::BrokenPipe, "Websocket closed")) // force to close the connection and don't try to reuse
                     }
                     if wrapper.is_some() && let Some(ref mut cgi_env) = cgi_env {
-                        cgi_env.insert("SCRIPT_FILENAME".to_string(), path_translated.display().to_string());
-                        cgi_env.insert("REDIRECT_STATUS".to_string(), "CGI".to_string()); // from config
-                        cgi_env.insert("SERVER_ADDR".to_string(), format!("{}", stream.local_addr().unwrap().ip()));
+                        if let Some(options) = env_ext {
+                            for option in options {
+                                if option.1 == "$SCRIPT_FILE" {
+                                    cgi_env.insert(option.0.to_string(), path_translated.display().to_string());
+                                } else if option.1 == "$IP" {
+                                    cgi_env.insert(option.0.to_string(), format!("{}", stream.local_addr().unwrap().ip()));
+                                } else {
+                                    cgi_env.insert(option.0, option.1);
+                                }
+                            }
+                        }
                     }
                     let mut load =
                     if let Some(wrapper) = wrapper {
@@ -794,7 +810,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         }
                     } else {  // no headers
                         let len = output.rest_len() ;
-                        let text_html = "text/plain".to_string();
+                        let text_html = TYPE_PLAIN.to_string();
                         let c_type = 
                         if let Some(ext) = path_translated. extension() {
                             MIME.get().unwrap().get(ext.to_str().unwrap()).unwrap_or(&text_html)
@@ -879,9 +895,22 @@ fn read_mapping(mapping: &Vec<JsonData>) -> Vec<Mapping> {
         let ext = e.get("ext").map(|ext| if let Text(ext) = ext { Some(ext.clone())} else {None}).unwrap_or(None);
         let wrapper =  e.get("engine").map(|wrapper| if let Text(wrapper) = wrapper { Some(wrapper.clone())} else {None}).unwrap_or(None);
         let no_headers = e.get("headerless").map(|val| if let Bool(val) = val { val } else {&false}).unwrap_or(&false);
+        let mut options_res = vec![];
+        if let Some(Arr(options)) = e.get("options") {
+            for option in options {
+                if let Data(option) = option {
+                    if let Some(Text(name)) = option.get("name") {
+                        if let Some(Text(value)) = option.get("value") {
+                            options_res.push((name.to_string(),value.to_string()))
+                        }
+                    }
+                }
+            }
+        }
         // TODO check for duplication web_path
         res.push(Mapping{ web_path:if *websocket {path.to_string()} else {if path.ends_with("/") {path.to_string()} else {path.to_string()  + "/"}},
-            path: trans.into(), cgi: *cgi, websocket: *websocket, ext,  wrapper, no_headers: *no_headers, })
+            path: trans.into(), cgi: *cgi, websocket: *websocket, ext,  wrapper, no_headers: *no_headers,
+            options: if options_res.is_empty() { None } else { Some(options_res)}, })
     }
     res.sort_by(|a, b| b.web_path.len().cmp(&a.web_path.len()));
     res
@@ -899,11 +928,10 @@ fn report_error(code: u16, request_line: &str, mut stream: &TcpStream) -> io::Re
         }
     };
     let length = contents.len();
-    let c_type = "text/html";
     let protocol = "HTTP/1.1";
     let msg = response_message(code);
     let response =
-        format!("{protocol} {code} {msg}\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\n\r\n");
+        format!("{protocol} {code} {msg}\r\nContent-Length: {length}\r\nContent-Type: {TYPE_HTML}\r\n\r\n");
 
     stream.write_all(response.as_bytes())?;
     stream.write_all(contents)?;
