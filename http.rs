@@ -241,6 +241,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
             LOGGER.lock().unwrap().error(&format!{"bad request 0x{}", simweb::to_hex(line.as_bytes())})}
         return Err(Error::new(ErrorKind::BrokenPipe, "no data"))
     }
+    //eprintln!("request {line}");
     let mut close = false;
     line.truncate(len-2); // \r\n
     let request_line = line.clone();
@@ -254,7 +255,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
             path = path[0..qp].to_string();
             query.to_owned()
         }
-        None => "".to_string()
+        None => String::new()
     };
 
     let mut path_translated = None;
@@ -327,7 +328,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 break
                             }
                         } else {
-                            return Err(Error::other("script part component doesn't exist"))
+                            return report_error(404,&request_line, stream) // format!("script {part} component doesn't exist")
                         }
                     }
                 }
@@ -833,15 +834,11 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                     let mut buffer = Vec::new();
                     let c_type =
                     if let Some(ext) = path_translated. extension() {
-                        MIME.get().unwrap().get(ext.to_str().unwrap())
-                    } else {None};
+                        MIME.get().unwrap().get(ext.to_str().unwrap()).map_or("octet-stream", |e| e)
+                    } else {"octet-stream"};
                     // read the whole file
                     f.read_to_end(&mut buffer)?;
                     
-                    let c_type = if let Some(c_type) = c_type {
-                        c_type } else {
-                        "octet-stream"
-                    } ;
                     let time = http_format_time(modified);
                     let length = buffer.len();
                     let response =
@@ -1132,7 +1129,7 @@ impl CgiOut {
                 if self.pos - start <= 2 {
                     return None
                 } else {
-                    return Some(String::from_utf8(self.load[start..self.pos-1].to_vec()).unwrap())
+                    return Some(String::from_utf8(self.load[start..self.pos-1].to_vec()).unwrap()) // lossy ?
                 }
             } else { met = false }
             if self.load[self.pos] == b'\r' { met = true; }
