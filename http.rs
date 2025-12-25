@@ -692,15 +692,13 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         return Err(Error::new(ErrorKind::BrokenPipe, "Websocket closed")) // force to close the connection and don't try to reuse
                     }
                     if let Some(ref mut cgi_env) = cgi_env && let Some(options) = env_ext {
-                            for (name,value) in options {
-                                if value == "$SCRIPT_FILE" {
-                                    cgi_env.insert(name, path_translated.display().to_string());
-                                } else if value == "$IP" {
-                                    cgi_env.insert(name, format!("{}", stream.local_addr().unwrap().ip()));
-                                } else {
-                                    cgi_env.insert(name, value);
-                                }
-                            }
+                        for (name,value) in options {
+                            cgi_env.insert(name, match value.as_str() {
+                                "$SCRIPT_FILE" => path_translated.display().to_string(),
+                                "$IP" => format!("{}", stream.local_addr().unwrap().ip()),
+                                _ => value,
+                            });
+                        }
                     }
                     let mut load =
                     if let Some(wrapper) = wrapper {
