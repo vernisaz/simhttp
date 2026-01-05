@@ -179,7 +179,7 @@ fn main() {
     
     let tp = ThreadPool::new(*tp as usize);
 
-    let listener = TcpListener::bind(format!{"{bind}:{port}"}).expect("can't bind {bind} to {port}, probably it's already in use");
+    let listener = TcpListener::bind(format!{"{bind}:{port}"}).expect(&format!("can't bind {bind} to {port}, probably it's already in use"));
     let stop = Arc::new(AtomicBool::new(false));
     let stop_one = stop.clone();
     init_mapping(read_mapping(mapping));
