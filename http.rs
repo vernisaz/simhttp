@@ -880,7 +880,7 @@ fn read_mapping(mapping: &Vec<JsonData>) -> Vec<Mapping> {
         let websocket = match e.get("WS-CGI") {
             Some(Bool(websocket)) => {
                     if *cgi && *websocket {
-                        LOGGER.lock().unwrap().warning(&format!{"Note: CGI overrules WS_CGI for {path}."});
+                        LOGGER.lock().unwrap().warning(&format!{"Note: WS_CGI overrules CGI for {path}, however all OS env variables will be cleared as for CGI."});
                     }
                     websocket},
             _ => &false
