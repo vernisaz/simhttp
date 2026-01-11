@@ -17,7 +17,7 @@ Obviously SimHttp is CI/CD friendly.
 A serviced Rust app can run as in CLI mode as in a web mode without any change.
 
 The server is perfectly suitable for an embedded development. You can deploy it on an embedded platform. CGI endpoints can be
-developed in C, Swift, or Rust.
+developed in C, Swift, Rust, PHP and so on.
 
 ## Building
 A [RustBee](https://github.com/vernisaz/rust_bee) script file is provided to build the server. There are 4 dependencies from the
@@ -110,7 +110,7 @@ Mac service should look similar to FreeBSD and I need to investigate details.
 ## Websocket
 The server provides a limited support of WebSocket protocol as WS-CGI. Only UTF-8 string packets are supported.
 
-## Well known CGI scripts
+## Popular CGI scripts
 How to use such CGI scripts, as _php\_cgi_, is described [there](https://github.com/vernisaz/simcom/blob/master/doc/PIs.md#installing-php-and-integrating-with-simhttp).
 
 ## How to compare it to miniserve and other Rust webservers
