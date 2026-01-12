@@ -59,6 +59,12 @@ An example of [env.conf](https://github.com/vernisaz/simhttp/blob/master/env.con
 The same executable of the server can be used for multiple configurations. Obviously the listening port or/and the binding
 address have to be different in the configurations.
 
+### Supporting secure connections
+Currently the server doesn't support direct SSL/TLS connections. Use any reverse proxies like Nginx, Caddy, or Traefik for that.
+It gives also benefits to run the server from a regular user account.
+
+The limitation of not supporting SSL/TLS can be reconsidered in the future.
+
 ## Running
 Just launch **simhttp**. Press 'q' for stop. (See a note in the [issues](https://github.com/vernisaz/simhttp/blob/master/issues.md))
 
