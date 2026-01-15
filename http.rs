@@ -821,7 +821,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis(), output.rest_len()})
                 } else {
                     let modified = fs::metadata(&path_translated)?.modified()?;
-                    if since > 0 && modified.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs() < since {
+                    if since > 0 && modified.duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_secs() < since {
                         let response =
                             format!("{protocol} 304 {}\r\n\r\n", response_message(304));
                         stream.write_all(response.as_bytes())?;
