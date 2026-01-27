@@ -125,11 +125,11 @@ How to set default time zone for PHP? Locate php.ini first. Prepare a simple .ph
 phpinfo(); 
 ?>
 ```
-and safe it under phpinfo.php. Run the file using a browser. Then use the php.ini location edit it:
+and safe it under phpinfo.php. Run the file using a browser and then use the php.ini location edit it:
 
-> sudo nano php_ini_cocation
+> sudo nano php_ini_location
 
-Search for date.timezone (Ctrl+W), uncomment the line and set the desired timezone. Save .ini file.
+Search for `date.timezone` (Ctrl+W), uncomment the line and set the desired timezone. Save .ini file.
 
 ## How to compare it to miniserve and other Rust webservers
 If you didn't check [miniserve](https://github.com/svenstaro/miniserve/tree/master) yet, then do it now. More likely you will be satisfied with it.
