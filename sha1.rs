@@ -37,6 +37,7 @@ impl Sha1 {
             e = h4;*/
 
             // Main loop of the SHA-1 algorithm using predefind values based on primes numbers.
+            #[allow(clippy::needless_range_loop)]
             for i in 0..80 {
                 let (f, k) = match i {
                     0..=19 => ((b & c) | ((!b) & d), 0x5A827999),

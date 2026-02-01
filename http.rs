@@ -179,7 +179,7 @@ fn main() {
     
     let tp = ThreadPool::new(*tp as usize);
 
-    let listener = TcpListener::bind(format!{"{bind}:{port}"}).expect(&format!("can't bind {bind} to {port}, probably it's already in use"));
+    let listener = TcpListener::bind(format!{"{bind}:{port}"}).unwrap_or_else(|err| panic!("can't bind {bind} to {port}, probably it's already in use - {err}"));
     let stop = Arc::new(AtomicBool::new(false));
     let stop_one = stop.clone();
     init_mapping(read_mapping(mapping));
@@ -629,11 +629,8 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     //let string = String::from_utf8_lossy(&data);
                                     //eprintln!("entered {string}");
                                 }
-    
-                                match stdin.write_all(&[255_u8,255,255,4]) { // TODO consider also using 6 - Acknowledge
-                                    Ok(()) => stdin.flush().unwrap(),
-                                    Err(_) => ()
-                                }
+                                
+                                if let Ok(()) = stdin.write_all(&[255_u8,255,255,4]) { stdin.flush().unwrap() } // TODO consider also using 6 - Acknowledge
                                 LOGGER.lock().unwrap().info(&format!("websocket session has terminated, endpoint {path_translated:?} will be killed"));
                                 // forsibly kill the endpoint at a websocket disconnection
                                 #[cfg(extra_stable)] // set in case of instability
@@ -675,12 +672,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             } 
                             let mut writer_stream = stream;
                             let mut buffer = [0_u8;MAX_LINE_LEN]; 
-                            loop {
-                                // TODO investigate why separation on chunks out breaks WS send
-                                let Ok(len) = stdout.read(&mut buffer) else {
-                                    break
-                                };
-                                //if len == 0 { break }
+                            while let Ok(len) = stdout.read(&mut buffer) {
                                 if len == 0 || writer_stream.write_all(encode_block(&buffer[0..len]).as_slice()).is_err() { break }
                             }
                             match writer_stream.write_all(&[0x88,0]) {
