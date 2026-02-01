@@ -21,7 +21,8 @@ developed in C, Swift, Rust, PHP and so on.
 
 ## Building
 A [RustBee](https://github.com/vernisaz/rust_bee) script file is provided to build the server. There are 4 dependencies from the
-micro libraries (crate) pool. The repositories should be cloned and built first.
+micro libraries (crate) pool. The repositories should be cloned and corresponding
+crates built first.
 
 - [scripts](https://github.com/vernisaz/simscript) it's only scripts required to build crates below
 - [RightSlash](https://github.com/vernisaz/right_slash)
@@ -32,7 +33,7 @@ micro libraries (crate) pool. The repositories should be cloned and built first.
 
 The directory where all *rlib* resides has to be specified in *crate_dir* variable of
 [bee.7b](https://github.com/vernisaz/simhttp/blob/master/bee.7b) script. 
-It has to be presented before building crates and the server.
+It has to exist before building crates and the server.
 
 The following directories structure is expected to build the server
 ```
@@ -135,8 +136,8 @@ Search for `date.timezone` (Ctrl+W), uncomment the line and set the desired time
 If you didn't check [miniserve](https://github.com/svenstaro/miniserve/tree/master) yet, then do it now. More likely you will be satisfied with it.
  Major difference of the _TRWS_ that it can be extended by CGI scripts
 and CGI websocket endpoints. For example, I implemented [TOTP](https://github.com/vernisaz/simtotp) with web interface,
-I couldn't do without _simhttp_. Simhttp is decoupled from deployed Rust applications, and you can deploy them without any change
+I couldn't do without _SimHTTP_. SimHTTP is decoupled from deployed Rust applications, and you can deploy them without any change
 of the server and even dynamically.
 
 ## Status
-Current version is SimHTTP/1.24b64. It's a beta version.
+Current version is SimHTTP/1.24b66. It's a beta version.
