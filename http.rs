@@ -358,7 +358,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
             env::vars().collect()
         } else {
             env::vars().filter(|(k, _)|
-             k != "PATH").collect()
+             k == "PATH").collect()
         };
         // CGI spec: https://datatracker.ietf.org/doc/html/rfc3875
         env.insert("GATEWAY_INTERFACE".to_string(), "CGI/1.1".to_string());
