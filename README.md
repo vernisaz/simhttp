@@ -120,17 +120,17 @@ The server provides a limited support of WebSocket protocol as WS-CGI. Only UTF-
 ## Popular CGI scripts
 How to use such CGI scripts, as _php\_cgi_, is described [there](https://github.com/vernisaz/simcom/blob/master/doc/PIs.md#installing-php-and-integrating-with-simhttp).
 
-How to set default time zone for PHP? Locate php.ini first. Prepare a simple .php file for that as
+How to set a default time zone for PHP? Locate *php.ini* first. Prepare a simple *.php* file for that as
 ```php
 <?php 
 phpinfo(); 
 ?>
 ```
-and safe it under phpinfo.php. Run the file using a browser and then use the php.ini location edit it:
+and safe it under phpinfo.php. Run the file using a browser and then use the *php.ini* location edit it:
 
 > sudo nano php_ini_location
 
-Search for `date.timezone` (Ctrl+W), uncomment the line and set the desired timezone. Save .ini file.
+Search for `date.timezone` (Ctrl+W), uncomment the line and set the desired timezone. Save *.ini* file.
 
 ## How to compare it to miniserve and other Rust webservers
 If you didn't check [miniserve](https://github.com/svenstaro/miniserve/tree/master) yet, then do it now. More likely you will be satisfied with it.
