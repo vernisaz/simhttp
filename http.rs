@@ -357,8 +357,12 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
         let mut env : HashMap<String, String> = if preserve_env {
             env::vars().collect()
         } else {
-            env::vars().filter(|(k, _)|
-             k == "PATH").collect()
+            #[cfg(unix)]
+            { env::vars().filter(|(k, _)|
+                 k == "PATH").collect() }
+            #[cfg(target_os = "windows")] 
+            { env::vars().filter(|(k, _)|
+                 k == "Path").collect() }
         };
         // CGI spec: https://datatracker.ietf.org/doc/html/rfc3875
         env.insert("GATEWAY_INTERFACE".to_string(), "CGI/1.1".to_string());
