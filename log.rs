@@ -1,5 +1,6 @@
 use crate::io;
 use std::{
+    fmt::Display,
     fs::{self, File},
     io::Seek,
     path::{/*MAIN_SEPARATOR_STR,*/ PathBuf},
@@ -104,7 +105,7 @@ impl LogFile {
             .unwrap()
             .as_millis() as u64;
         let name: String = name.as_ref().to_string();
-        let name = simweb::interpolate(&name, &vec![Box::new(format!("{created}"))]); // created
+        let name = simweb::interpolate(&name, &vec![Box::new(&created as &dyn Display)]); // created
         let path: String = path.into();
         let mut log_path = PathBuf::from(&path);
         log_path.push(name.clone());
