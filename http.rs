@@ -209,7 +209,7 @@ fn main() {
     let stop_listener = listener.try_clone().unwrap();
     if !no_terminal {
         thread::spawn(move || {
-            println! {"Presss 'q' to stop"};
+            println! {"Presss 'q' and/or ^C to stop"};
             let mut input = String::new();
             loop {
                 io::stdin()
@@ -818,7 +818,8 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             .stdin(Stdio::piped())
                             .stderr(Stdio::piped())
                             //.arg(&path_translated) TODO provide a mechanism how script reaches the wrapper
-                            .current_dir(path_translated.parent().unwrap())
+                            // TODO decide where current dir should point, currently the actuall script
+                            .current_dir(path_translated.parent().ok_or(io::Error::other("No parent dir for CGI"))?)
                             .env_clear()
                             .envs(cgi_env.unwrap())
                             .spawn()?
@@ -827,7 +828,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             .stdout(Stdio::piped())
                             .stdin(Stdio::piped())
                             .stderr(Stdio::piped())
-                            .current_dir(path_translated.parent().unwrap())
+                            .current_dir(path_translated.parent().ok_or(io::Error::other("No parent dir for CGI"))?)
                             .env_clear()
                             .envs(cgi_env.unwrap())
                             .spawn()?
@@ -837,7 +838,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         && let Some(mut stdin) = load.stdin.take()
                     {
                         thread::spawn(move || // TODO consider using a separate thread pool
-                            if let Err(err) = stdin.write_all(&extra) { LOGGER.lock().unwrap().error(&format!{"can't write to SGI script: {err}"}) }
+                            if let Err(err) = stdin.write_all(&extra) { LOGGER.lock().unwrap().error(&format!{"can't write in SGI script: {err}"}) }
                         );
                     }
                     let _ = stream.set_read_timeout(None);
