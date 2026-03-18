@@ -210,7 +210,7 @@ fn main() {
     if !no_terminal {
         thread::spawn(move || {
             println! {"Presss 'q' and/or ^C to stop"};
-            let mut input = String::new();
+            let mut input = String::with_capacity(4);
             loop {
                 io::stdin()
                     .read_line(&mut input)
@@ -271,7 +271,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
         _ => "disconnected".to_string(),
     };
     let mut buf_reader = BufReader::new(stream);
-    let mut line = String::new();
+    let mut line = String::with_capacity(256); // is it really needed to fight the fragmentation?
     //let lines = buf_reader.lines(); // may still work
     let len = buf_reader.read_line(&mut line)?;
     if len < 10 {
@@ -309,7 +309,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
     let mut path_translated = None;
     let mut cgi = false;
     let mut websocket = false;
-    let mut script = String::new();
+    let mut script = String::with_capacity(256); // to reduce fragmentation
     let mut path_info = None;
     let mut wrapper = None;
     let mut no_headers = false;
@@ -326,7 +326,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                 websocket = true;
                 preserve_env = !e.cgi;
                 cgi = true;
-                let mut ws_file = PathBuf::new();
+                let mut ws_file = PathBuf::with_capacity(256);
                 ws_file.push(e.path.clone());
                 // add ext?
                 if cfg!(windows) {
@@ -369,7 +369,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         == *"."
                             {
                                 script = part.to_string();
-                                let mut acc = String::new();
+                                let mut acc = String::with_capacity(e.web_path.len());
                                 for e in script_parts.by_ref() {
                                     acc.push('/');
                                     acc.push_str(e)
@@ -377,7 +377,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 if !acc.is_empty() {
                                     path_info = Some(acc)
                                 }
-                                path_translated = translated.to_str().map(|s| s.to_string());
+                                path_translated = translated.to_str().map(str::to_string);
                                 cgi = true;
                                 wrapper = e.wrapper.clone();
                                 if e.no_headers {
@@ -393,7 +393,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                 }
                 if script.is_empty() {
                     let path_buf = PathBuf::from(&e.path);
-                    let mut sanitized_parts = PathBuf::new();
+                    let mut sanitized_parts = PathBuf::with_capacity(256);
                     for part in
                         simweb::as_web_path(&mut path[e.web_path.len()..].to_string()).split('/')
                     {
@@ -406,7 +406,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         }
                     }
                     path_translated =
-                        Some(path_buf.join(sanitized_parts).to_str().unwrap().to_string());
+                        Some(path_buf.join(sanitized_parts).display().to_string());
                 }
                 // eprintln!{"mapping found as {path_translated:?}"}
             }
@@ -457,7 +457,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
             }
             let path_translated = if let Some(path_info) = path_info {
                 // sanitize path_info
-                let mut sanitized_parts = PathBuf::new();
+                let mut sanitized_parts = PathBuf::with_capacity(256);
                 for part in rslash::to_unix_separator(path_info).split('/') {
                     match part {
                         ".." => {
@@ -855,7 +855,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                     let mut code_num = 200;
                     let status = if !no_headers { output.next() } else { None };
                     if let Some(status) = status {
-                        let mut headers = String::new();
+                        let mut headers = String::with_capacity(256); // to reduce fragmentation
                         // first line
                         let mut status = if let Some((key, val)) = status.split_once(": ") {
                             let key = key.to_lowercase();
@@ -962,7 +962,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         return Ok(());
                     }
                     let mut f = File::open(&path_translated)?;
-                    let mut buffer = Vec::new();
+                    let mut buffer = Vec::with_capacity(4096);
                     let c_type = if let Some(ext) = path_translated.extension() {
                         MIME.get()
                             .unwrap()
@@ -1159,7 +1159,7 @@ fn encode_block(input: &[u8]) -> Vec<u8> {
         }
         _ => unreachable!("wrong len: {len}"), // 0 is filtered out to do not call the method
     }
-    // no 4 bytes mask for server to client
+    // no 4 bytes mask for server -> client
     res.extend_from_slice(input);
     res
 }
