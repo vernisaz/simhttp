@@ -205,7 +205,7 @@ fn main() {
     LOGGER
         .lock()
         .unwrap()
-        .info(&format! {"Server started for {bind}:{port}"});
+        .info(&format! {"Server started for {bind}:{port} at {}", http_format_time(SystemTime::now())});
     let stop_listener = listener.try_clone().unwrap();
     if !no_terminal {
         thread::spawn(move || {
