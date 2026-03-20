@@ -609,7 +609,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             .lock()
                             .unwrap()
                             .info(&format! {"{addr} -- [{:>10}] \"{request_line}\" 101 0",
-                            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()});
+                            SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis()});
                         let _ = stream.set_read_timeout(None);
                         let mut reader_stream = stream; //.try_clone().unwrap();
                         let mut stdin = load.stdin.take().unwrap(); // TODO can be no stdin endpoint just sending out some info, or for example file content
@@ -729,7 +729,8 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 }
                                 
                                 if let Ok(()) = stdin.write_all(&[255_u8,255,255,4]) { stdin.flush().unwrap() } // TODO consider also using 6 - Acknowledge
-                                LOGGER.lock().unwrap().info(&format!("websocket session has terminated, endpoint {path_translated:?} will be killed"));
+                                LOGGER.lock().unwrap().info(&format!("websocket session has terminated at [{:>10}], endpoint {path_translated:?} will be killed",
+                                    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis()));
                                 // forsibly kill the endpoint at a websocket disconnection
                                 #[cfg(extra_stable)] // set in case of instability
                                 load.kill().expect("command couldn't be killed"); 
@@ -941,7 +942,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         }
                     }
                     LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" {code_num} {}",
-                       SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis(), output.rest_len()})
+                       SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis(), output.rest_len()})
                 } else {
                     let modified = fs::metadata(&path_translated)?.modified()?;
                     if since > 0
@@ -958,7 +959,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             .lock()
                             .unwrap()
                             .info(&format! {"{addr} -- [{:>10}] \"{request_line}\" 304 0",
-                            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()});
+                            SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis()});
                         return Ok(());
                     }
                     let mut f = File::open(&path_translated)?;
@@ -985,7 +986,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                     // log
                     LOGGER.lock().unwrap().info(
                         &format! {"{addr} -- [{:>10}] \"{request_line}\" 200 {length}",
-                        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()},
+                        SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis()},
                     )
                 }
             }
@@ -1113,7 +1114,7 @@ fn report_error(code: u16, request_line: &str, mut stream: &TcpStream) -> io::Re
     };
     LOGGER.lock().unwrap().info(
         &format! {"{addr} -- [{:>10}] \"{request_line}\" {code} {length}",
-        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()},
+        SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis()},
     );
     Ok(())
 }
