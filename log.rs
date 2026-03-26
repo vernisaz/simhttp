@@ -102,7 +102,7 @@ impl LogFile {
     pub fn from(path: impl Into<String>, name: &impl AsRef<str>) -> Self {
         let created = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_millis() as u64;
         let name: String = name.as_ref().to_string();
         let name = simweb::interpolate(&name, &vec![Box::new(&created as &dyn Display)]); // created

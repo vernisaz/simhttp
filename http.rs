@@ -112,7 +112,7 @@ fn main() -> Result<(), Box<dyn GenError>> {
                 let name = if let Some(Text(val)) = out.get("name") {
                     val
                 } else {
-                    "simhttp-${0}"
+                    "simhttp-${0}" // currently only one positioned variable as time is supported (port and bind addr can be considered in future)
                 };
 
                 LOGGER
