@@ -105,20 +105,25 @@ fn main() -> Result<(), Box<dyn GenError>> {
         Data(env) => env,
         err => return Err(format!("Corrupted env.conf ({err:?}) file in the current directory").into())
     };
-    
+    let Some(Text(bind)) = env.get("bind") else {
+        return Err("No bound addr is specified".into())
+    };
+    let Some(Num(port)) = env.get("port") else {
+        return Err("No port number properly configured".into())
+    };
     if let Some(Data(log)) = env.get("log") {
         if let Some(Data(out)) = log.get("out") {
             if let Some(Text(path)) = out.get("path") {
                 let name = if let Some(Text(val)) = out.get("name") {
                     val
                 } else {
-                    "simhttp-${0}" // currently only one positioned variable as time is supported (port and bind addr can be considered in future)
+                    "simhttp-${0}" // currently only one positioned variable as time(0), bind_addr(1), and port(2) are supported
                 };
 
                 LOGGER
                     .lock()
                     .unwrap()
-                    .set_output(LogFile::from(path, &name))
+                    .set_output(LogFile::from(path, &name, &bind, &port))
             } else {
                 LOGGER.lock().unwrap().set_output(LogFile::new());
             }
@@ -157,12 +162,6 @@ fn main() -> Result<(), Box<dyn GenError>> {
 
     let Some(Num(tp)) = env.get("threads") else {
         return Err("No number of threads configured".into())
-    };
-    let Some(Text(bind)) = env.get("bind") else {
-        return Err("No bound addr is specified".into())
-    };
-    let Some(Num(port)) = env.get("port") else {
-        return Err("No port number properly configured".into())
     };
 
     let Some(Arr(mapping)) = env.get("mapping") else {

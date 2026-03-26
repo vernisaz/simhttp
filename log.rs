@@ -3,7 +3,7 @@ use std::{
     fmt::Display,
     fs::{self, File},
     io::Seek,
-    path::{/*MAIN_SEPARATOR_STR,*/ PathBuf},
+    path::{PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -99,17 +99,16 @@ impl LogFile {
         }
     }
 
-    pub fn from(path: impl Into<String>, name: &impl AsRef<str>) -> Self {
+    pub fn from(path: impl Into<String>, name: &impl AsRef<str>, bind: &str, port: &f64) -> Self {
         let created = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as u64;
         let name: String = name.as_ref().to_string();
-        let name = simweb::interpolate(&name, &vec![Box::new(&created as &dyn Display)]); // created
+        let name = simweb::interpolate(&name, &vec![Box::new(&created as &dyn Display), Box::new(&bind as &dyn Display), Box::new(port as &dyn Display),]); // created
         let path: String = path.into();
         let mut log_path = PathBuf::from(&path);
-        log_path.push(name.clone());
-        log_path.set_extension("log");
+        log_path.push(format!("{name}.log"));
         let file = File::create(&log_path)
             .unwrap_or_else(|e| panic!("can't create log {log_path:?}/{e:?}"));
 
