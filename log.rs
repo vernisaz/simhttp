@@ -7,7 +7,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-static MAX_LINES: u32 = 10_1000;
+static MAX_LINES: u32 = 10_000;
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum Level {
@@ -55,7 +55,7 @@ impl<'a> SimLogger<'a> {
     }
     pub fn log(&mut self, level: Level, message: &str) {
         if self.level.clone() as u32 <= level as u32 {
-            writeln!(self.output, "{}", message).unwrap();
+            writeln!(self.output, "{message}").unwrap();
         }
     }
     pub fn info(&mut self, message: &str) {
@@ -84,7 +84,7 @@ impl LogFile {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
-        let name = format! {"simhttp-{}", created};
+        let name = format! {"simhttp-{created}"};
         let mut path = PathBuf::from(".");
         path.push(name.clone());
         path.set_extension("log");

@@ -97,16 +97,15 @@ fn init_ping_interval(interval_mins: u64) -> () {
     PING_INTERVAL.set(interval_mins).unwrap()
 }
 
-fn main() {
-    let Ok(env) = fs::read_to_string("env.conf") else {
-        eprintln! {"No env.conf file in the current directory"}
-        return;
+fn main() -> Result<(), Box<dyn GenError>> {
+    let Ok(env) = fs::read_to_string("env.conf").inspect_err(|e| eprintln!("Can't read 'env.conf' because: {e:?}")) else {
+        return Err("Check env.conf file in the current directory".into());
     };
-    let env = simjson::parse(&env);
-    let Data(env) = env else {
-        eprintln! {"Corrupted env.conf file in the current directory"}
-        return;
+    let env = match simjson::parse(&env) {
+        Data(env) => env,
+        err => return Err(format!("Corrupted env.conf ({err:?}) file in the current directory").into())
     };
+    
     if let Some(Data(log)) = env.get("log") {
         if let Some(Data(out)) = log.get("out") {
             if let Some(Text(path)) = out.get("path") {
@@ -157,21 +156,17 @@ fn main() {
     // TODO if a terminal is there, then can do debug printout on it bypassing log
 
     let Some(Num(tp)) = env.get("threads") else {
-        eprintln! {"No number of threads configured"}
-        return;
+        return Err("No number of threads configured".into())
     };
     let Some(Text(bind)) = env.get("bind") else {
-        eprintln! {"No bound addr is specified"}
-        return;
+        return Err("No bound addr is specified".into())
     };
     let Some(Num(port)) = env.get("port") else {
-        eprintln! {"No port number properly configured"}
-        return;
+        return Err("No port number properly configured".into())
     };
 
     let Some(Arr(mapping)) = env.get("mapping") else {
-        eprintln! {"No mapping properly configured"}
-        return;
+        return Err("No mapping properly configured".into())
     };
     let mut mime2 = HashMap::new();
     if let Some(Arr(mime)) = env.get("mime") {
@@ -261,8 +256,9 @@ fn main() {
             break;
         }
     }
+    drop(tp);
     LOGGER.lock().unwrap().info("Stopping the server...");
-    drop(tp)
+    Ok(())
 }
 
 fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
