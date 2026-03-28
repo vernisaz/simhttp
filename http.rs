@@ -99,17 +99,17 @@ fn init_ping_interval(interval_mins: u64) -> () {
 
 fn main() -> Result<(), Box<dyn GenError>> {
     let Ok(env) = fs::read_to_string("env.conf").inspect_err(|e| eprintln!("Can't read 'env.conf' because: {e:?}")) else {
-        return Err("Check env.conf file in the current directory".into());
+        return Err("Check 'env.conf' file in the current directory".into());
     };
     let env = match simjson::parse(&env) {
         Data(env) => env,
-        err => return Err(format!("Corrupted env.conf ({err:?}) file in the current directory").into())
+        err => return Err(format!("Corrupted 'env.conf' ({err:?}) file in the current directory").into())
     };
     let Some(Text(bind)) = env.get("bind") else {
         return Err("No bound addr is specified".into())
     };
     let Some(Num(port)) = env.get("port") else {
-        return Err("No port number properly configured".into())
+        return Err("No port number is properly configured".into())
     };
     if let Some(Data(log)) = env.get("log") {
         if let Some(Data(out)) = log.get("out") {
@@ -117,7 +117,7 @@ fn main() -> Result<(), Box<dyn GenError>> {
                 let name = if let Some(Text(val)) = out.get("name") {
                     val
                 } else {
-                    "simhttp-${0}" // currently only one positioned variable as time(0), bind_addr(1), and port(2) are supported
+                    "simhttp-${0}" // positioned variables as time(0), bind_addr(1), and port(2) are supported
                 };
 
                 LOGGER
@@ -128,7 +128,7 @@ fn main() -> Result<(), Box<dyn GenError>> {
                 LOGGER.lock().unwrap().set_output(LogFile::new());
             }
         }
-        if let Some(Num(level)) = log.get("level") {
+        if let Some(Num(level)) = log.get("level") && (0..=5).contains(&(*level as u32)) {
             if let Ok(mut logger) = LOGGER.lock() {
                 let level = Level::from(*level as u32);
                 logger.info(&format! {"log level set to {:?}", &level});
