@@ -2,6 +2,7 @@ extern crate rslash;
 extern crate simjson;
 extern crate simtpool;
 extern crate simweb;
+extern crate simcli;
 use simjson::JsonData::{self, Arr, Bool, Data, Num, Text};
 use simtpool::ThreadPool;
 use simweb::{http_format_time, parse_http_timestamp};
@@ -24,6 +25,7 @@ use std::{
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+use simcli::{OptTyp,OptVal,CLI};
 mod log;
 use log::{Level, LogFile};
 mod sha1;
@@ -98,6 +100,14 @@ fn init_ping_interval(interval_mins: u64) -> () {
 }
 
 fn main() -> Result<(), Box<dyn GenError>> {
+    let mut cli = CLI::new();
+    cli.opt("v", OptTyp::None)?.description("get the version");
+    if cli.get_opt("v") == Some(&OptVal::Empty) {
+        return Ok(println!("SimpleHTTP - version {VERSION}"))
+    }
+    if cli.get_errors().is_some() || cli.args().len() > 0 {
+        return Err("no any command line arguments accepted currently".into())
+    }
     let Ok(env) = fs::read_to_string("env.conf").inspect_err(|e| eprintln!("Can't read 'env.conf' because: {e:?}")) else {
         return Err("Check 'env.conf' file in the current directory".into());
     };

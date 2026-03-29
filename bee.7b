@@ -5,7 +5,7 @@ crate_dir=..${~/~}crates
 comp opts=[]
 
 version=1.25
-set_env(VERSION,SimHTTP/${version}b72)
+set_env(VERSION,SimHTTP/${version}b73)
 
 if {
 	eq(${~os~},windows)

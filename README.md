@@ -28,6 +28,7 @@ crates built first.
 - [RightSlash](https://github.com/vernisaz/right_slash)
 - [SimJSON](https://github.com/vernisaz/simjson)
 - [SimThreadPool](https://github.com/vernisaz/simtpool)
+- [SimCLI](https://github.com/vernisaz/simcli)
 - [SimWeb](https://github.com/vernisaz/simweb) -> requires [SimTime](https://github.com/vernisaz/simtime)
 
 
@@ -140,4 +141,4 @@ I couldn't do without _SimHTTP_. SimHTTP is decoupled from deployed Rust applica
 of the server and even dynamically.
 
 ## Status
-Current version is SimHTTP/1.25b72. It's a beta version.
+Current version is SimHTTP/1.25b73. It's a beta version.
