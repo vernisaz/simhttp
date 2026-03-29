@@ -106,7 +106,7 @@ fn main() -> Result<(), Box<dyn GenError>> {
         return Ok(println!("SimpleHTTP - version {VERSION}"))
     }
     if cli.get_errors().is_some() || cli.args().len() > 0 {
-        return Err("no any command line arguments accepted currently".into())
+        return Err("No any command line arguments accepted currently".into())
     }
     let Ok(env) = fs::read_to_string("env.conf").inspect_err(|e| eprintln!("Can't read 'env.conf' because: {e:?}")) else {
         return Err("Check 'env.conf' file in the current directory".into());
@@ -213,7 +213,7 @@ fn main() -> Result<(), Box<dyn GenError>> {
     let stop_listener = listener.try_clone().unwrap();
     if !no_terminal {
         thread::spawn(move || {
-            println! {"Presss 'q' and/or ^C to stop"};
+            println! {"Presss 'q' or ^C to stop"};
             let mut input = String::with_capacity(4);
             loop {
                 io::stdin()
