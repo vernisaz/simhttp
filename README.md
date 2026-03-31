@@ -48,6 +48,7 @@ The following directories structure is expected to build the server
 │   ├─simjson
 │   ├─simtpool
 │   ├─simweb
+│   ├─simcli
 │   ├─simtime
 │   .....
 ....
