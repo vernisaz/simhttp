@@ -105,7 +105,7 @@ fn main() -> Result<(), Box<dyn GenError>> {
     if cli.get_opt("v") == Some(&OptVal::Empty) {
         return Ok(println!("SimpleHTTP - version {VERSION}"))
     }
-    if cli.get_errors().is_some() || cli.args().len() > 0 {
+    if cli.get_errors().is_some() || (cli.args().len() == 1 && !cli.args()[0].is_empty()) || cli.args().len() > 1  {
         return Err("No any command line arguments accepted currently".into())
     }
     let Ok(env) = fs::read_to_string("env.conf").inspect_err(|e| eprintln!("Can't read 'env.conf' because: {e:?}")) else {
