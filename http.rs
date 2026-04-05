@@ -1,8 +1,9 @@
 extern crate rslash;
+extern crate simcli;
 extern crate simjson;
 extern crate simtpool;
 extern crate simweb;
-extern crate simcli;
+use simcli::{CLI, OptTyp, OptVal};
 use simjson::JsonData::{self, Arr, Bool, Data, Num, Text};
 use simtpool::ThreadPool;
 use simweb::{http_format_time, parse_http_timestamp};
@@ -25,7 +26,6 @@ use std::{
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use simcli::{OptTyp,OptVal,CLI};
 mod log;
 use log::{Level, LogFile};
 mod sha1;
@@ -45,6 +45,12 @@ struct Mapping {
 struct CgiOut {
     load: Vec<u8>,
     pos: usize,
+}
+
+enum BufType<T> {
+    BufReader((BufReader<T>, u64)),
+    Buf(Vec<u8>),
+    None,
 }
 
 macro_rules! debug {
@@ -72,7 +78,11 @@ static KEEPALIVE_TIMEOUT: OnceLock<u64> = OnceLock::new();
 
 static PING_INTERVAL: OnceLock<u64> = OnceLock::new();
 
+static SIZING_CONSTRAINS: OnceLock<(u64, u64, usize)> = OnceLock::new();
+
 const MAX_LINE_LEN: usize = 64 * 1024;
+
+const DUMMY_CHUNK_LEN: usize = 16 * 1024;
 
 const PARSE_NUM_ERR: u16 = 501;
 
@@ -99,27 +109,42 @@ fn init_ping_interval(interval_mins: u64) -> () {
     PING_INTERVAL.set(interval_mins).unwrap()
 }
 
+fn init_sizing_constrains(req_kilo: u64, resp_kilo: u64, chunk_kilo: usize) -> () {
+    SIZING_CONSTRAINS
+        .set((req_kilo, resp_kilo, chunk_kilo))
+        .unwrap()
+}
+
 fn main() -> Result<(), Box<dyn GenError>> {
     let mut cli = CLI::new();
     cli.opt("v", OptTyp::None)?.description("get the version");
     if cli.get_opt("v") == Some(&OptVal::Empty) {
-        return Ok(println!("SimpleHTTP - version {VERSION}"))
+        return Ok(println!("SimpleHTTP - version {VERSION}"));
     }
-    if cli.get_errors().is_some() || (cli.args().len() == 1 && !cli.args()[0].is_empty()) || cli.args().len() > 1  {
-        return Err("No any command line arguments accepted currently".into())
+    if cli.get_errors().is_some()
+        || (cli.args().len() == 1 && !cli.args()[0].is_empty())
+        || cli.args().len() > 1
+    {
+        return Err("No any command line arguments accepted currently".into());
     }
-    let Ok(env) = fs::read_to_string("env.conf").inspect_err(|e| eprintln!("Can't read 'env.conf' because: {e:?}")) else {
+    let Ok(env) = fs::read_to_string("env.conf")
+        .inspect_err(|e| eprintln!("Can't read 'env.conf' because: {e:?}"))
+    else {
         return Err("Check 'env.conf' file in the current directory".into());
     };
     let env = match simjson::parse(&env) {
         Data(env) => env,
-        err => return Err(format!("Corrupted 'env.conf' ({err:?}) file in the current directory").into())
+        err => {
+            return Err(
+                format!("Corrupted 'env.conf' ({err:?}) file in the current directory").into(),
+            );
+        }
     };
     let Some(Text(bind)) = env.get("bind") else {
-        return Err("No bound addr is specified".into())
+        return Err("No bound addr is specified".into());
     };
     let Some(Num(port)) = env.get("port") else {
-        return Err("No port number is properly configured".into())
+        return Err("No port number is properly configured".into());
     };
     if let Some(Data(log)) = env.get("log") {
         if let Some(Data(out)) = log.get("out") {
@@ -133,12 +158,14 @@ fn main() -> Result<(), Box<dyn GenError>> {
                 LOGGER
                     .lock()
                     .unwrap()
-                    .set_output(LogFile::from(path, &name, &bind, &port))
+                    .set_output(LogFile::from(path, &name, bind, port))
             } else {
                 LOGGER.lock().unwrap().set_output(LogFile::new());
             }
         }
-        if let Some(Num(level)) = log.get("level") && (0..=5).contains(&(*level as u32)) {
+        if let Some(Num(level)) = log.get("level")
+            && (0..=5).contains(&(*level as u32))
+        {
             if let Ok(mut logger) = LOGGER.lock() {
                 let level = Level::from(*level as u32);
                 logger.info(&format! {"log level set to {:?}", &level});
@@ -171,11 +198,11 @@ fn main() -> Result<(), Box<dyn GenError>> {
     // TODO if a terminal is there, then can do debug printout on it bypassing log
 
     let Some(Num(tp)) = env.get("threads") else {
-        return Err("No number of threads configured".into())
+        return Err("No number of threads configured".into());
     };
 
     let Some(Arr(mapping)) = env.get("mapping") else {
-        return Err("No mapping properly configured".into())
+        return Err("No mapping properly configured".into());
     };
     let mut mime2 = HashMap::new();
     if let Some(Arr(mime)) = env.get("mime") {
@@ -198,6 +225,21 @@ fn main() -> Result<(), Box<dyn GenError>> {
         _ => 30_u64,
     });
 
+    init_sizing_constrains(
+        match env.get("max_request_size_kilo") {
+            Some(Num(val)) => *val as u64,
+            _ => 0_u64,
+        },
+        match env.get("max_response_size_kilo") {
+            Some(Num(val)) => *val as u64,
+            _ => 0_u64,
+        },
+        match env.get("max_chunk_size_kilo") {
+            Some(Num(val)) => *val as usize,
+            _ => 0_usize,
+        },
+    );
+
     let tp = ThreadPool::new(*tp as usize);
 
     let listener = TcpListener::bind(format! {"{bind}:{port}"}).unwrap_or_else(|err| {
@@ -206,10 +248,9 @@ fn main() -> Result<(), Box<dyn GenError>> {
     let stop = Arc::new(AtomicBool::new(false));
     let stop_one = stop.clone();
     init_mapping(read_mapping(mapping));
-    LOGGER
-        .lock()
-        .unwrap()
-        .info(&format! {"Server started for {bind}:{port} at {}", http_format_time(SystemTime::now())});
+    LOGGER.lock().unwrap().info(
+        &format! {"Server started for {bind}:{port} at {}", http_format_time(SystemTime::now())},
+    );
     let stop_listener = listener.try_clone().unwrap();
     if !no_terminal {
         thread::spawn(move || {
@@ -410,8 +451,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             some => sanitized_parts.push(some),
                         }
                     }
-                    path_translated =
-                        Some(path_buf.join(sanitized_parts).display().to_string());
+                    path_translated = Some(path_buf.join(sanitized_parts).display().to_string());
                 }
                 // eprintln!{"mapping found as {path_translated:?}"}
             }
@@ -421,7 +461,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
 
     let mut content_len = 0_u64;
     let mut since = 0_u64;
-    let mut extra = None;
+    let mut extra = BufType::None;
     let mut cgi_env = if cgi {
         let mut env: HashMap<String, String> = if preserve_env {
             env::vars().collect()
@@ -534,15 +574,40 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
         if !env.contains_key("CONTENT_TYPE") {
             env.insert("CONTENT_TYPE".to_string(), TYPE_PLAIN.to_string());
         }
-        if content_len > 0 {
-            let mut buffer = vec![0u8; content_len as usize];
-            buf_reader.read_exact(&mut buffer)?;
-            //println!{"input:-> {}", String::from_utf8_lossy( &buffer)}
-            extra = Some(buffer)
-        }
         if !websocket && env.get("HTTP_UPGRADE") == Some(&"websocket".to_string()) {
             return report_error(404, &request_line, stream);
         }
+        if content_len > 0 {
+            // input data for CGI can be to large, so probably a chunk proccessing
+            // can be reasonable
+            // currently introduction of size guard can be reasonable
+            let (req_size, _, chunk_size) = SIZING_CONSTRAINS.get().unwrap();
+            if *req_size > 0 && *req_size < content_len {
+                let num_chunks = content_len / DUMMY_CHUNK_LEN as u64;
+                let remain = (content_len % DUMMY_CHUNK_LEN as u64) as usize;
+                let mut buffer = vec![0u8; DUMMY_CHUNK_LEN];
+                for _ in 0..num_chunks {
+                    buf_reader.read_exact(&mut buffer)?;
+                }
+                if remain > 0 {
+                    buf_reader.read_exact(&mut buffer[..remain])?;
+                }
+                return report_error(413, &request_line, stream);
+            }
+            if *req_size == 0
+                || *chunk_size == 0
+                || content_len < *req_size
+                || content_len < *chunk_size as u64
+            {
+                let mut buffer = vec![0u8; content_len as usize];
+                buf_reader.read_exact(&mut buffer)?;
+                //println!{"input:-> {}", String::from_utf8_lossy( &buffer)}
+                extra = BufType::Buf(buffer)
+            }
+        } else {
+            extra = BufType::BufReader((buf_reader, content_len))
+        }
+
         Some(env)
     } else {
         line.clear();
@@ -825,7 +890,11 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             .stderr(Stdio::piped())
                             //.arg(&path_translated) TODO provide a mechanism how script reaches the wrapper
                             // TODO decide where current dir should point, currently the actuall script
-                            .current_dir(path_translated.parent().ok_or(io::Error::other("No parent dir for CGI"))?)
+                            .current_dir(
+                                path_translated
+                                    .parent()
+                                    .ok_or(io::Error::other("No parent dir for CGI"))?,
+                            )
                             .env_clear()
                             .envs(cgi_env.unwrap())
                             .spawn()?
@@ -834,20 +903,59 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             .stdout(Stdio::piped())
                             .stdin(Stdio::piped())
                             .stderr(Stdio::piped())
-                            .current_dir(path_translated.parent().ok_or(io::Error::other("No parent dir for CGI"))?)
+                            .current_dir(
+                                path_translated
+                                    .parent()
+                                    .ok_or(io::Error::other("No parent dir for CGI"))?,
+                            )
                             .env_clear()
                             .envs(cgi_env.unwrap())
                             .spawn()?
                     };
-
-                    if let Some(extra) = extra
-                        && let Some(mut stdin) = load.stdin.take()
-                    {
-                        thread::spawn(move || // TODO consider using a separate thread pool
-                            if let Err(err) = stdin.write_all(&extra) { LOGGER.lock().unwrap().error(&format!{"can't write in SGI script: {err}"}) }
-                        );
-                    }
                     let _ = stream.set_read_timeout(None);
+                    if let Some(mut stdin) = load.stdin.take() {
+                        match extra {
+                            BufType::Buf(extra) => {
+                                thread::spawn(move || // TODO consider using a separate thread pool
+                            if let Err(err) = stdin.write_all(&extra) { LOGGER.lock().unwrap().error(&format!{"can't write in CGI script: {err}"}) }
+                        );
+                            }
+                            BufType::BufReader((mut in_reader, len)) => {
+                                //thread::spawn(move || {
+                                    //let  (_,_,chunk_size) = SIZING_CONSTRAINS.get().unwrap();
+                                    let mut buffer = vec![0u8; DUMMY_CHUNK_LEN];
+                                    let mut processed_len = len;
+
+                                    while processed_len > 0 {
+                                        match if processed_len < DUMMY_CHUNK_LEN as u64 {
+                                            in_reader.read(&mut buffer[..processed_len as usize])
+                                        } else {
+                                            in_reader.read(&mut buffer)
+                                        } {
+                                            Ok(op_len) => {
+                                                if let Err(err) = stdin.write_all(&buffer[..op_len])
+                                                {
+                                                    LOGGER.lock().unwrap().error(&format!{"can't write in CGI script: {err}"});
+                                                    break;
+                                                }
+                                                processed_len -= op_len as u64
+                                            }
+                                            Err(err) => {
+                                                LOGGER.lock().unwrap().error(
+                                                    &format! {"preemptive read error: {err}"},
+                                                );
+                                                break;
+                                            }
+                                        }
+                                    }
+                                //});
+                            }
+                            BufType::None => (),
+                        }
+                    }
+
+                    // such approach will quickly consume all memory, so
+                    // redesign with threads processing out and err
                     let output = load.wait_with_output()?;
                     let err = BufReader::new(&*output.stderr);
                     err.lines().for_each(|line| {

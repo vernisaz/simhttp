@@ -3,7 +3,7 @@ use std::{
     fmt::Display,
     fs::{self, File},
     io::Seek,
-    path::{PathBuf},
+    path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -116,9 +116,9 @@ impl LogFile {
         let path: String = path.into();
         let mut log_path = PathBuf::from(&path);
         log_path.push(format!("{name}.log"));
-        let file =
-            File::create(&log_path).unwrap_or_else(|e| panic!("can't create log {log_path:?}/{e:?}"));
-    
+        let file = File::create(&log_path)
+            .unwrap_or_else(|e| panic!("can't create log {log_path:?}/{e:?}"));
+
         LogFile {
             currnet_line: 0,
             current_chunk: 0,
