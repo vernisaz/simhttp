@@ -912,6 +912,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             .spawn()?
                     };
                     let _ = stream.set_read_timeout(None);
+                    eprintln!("starting cgi");
                     if let Some(stderr) = load.stderr.take() {
                         // a thread for consuming error
                         thread::spawn(move || {
@@ -948,13 +949,21 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 if let Ok(len) = buf_reader.read_line(&mut line)
                                     && len > 0
                                     && let Some(rc) = line.pop()
+                                    && rc == '\n'
+                                    && let Some(rc) = line.pop()
                                     && rc == '\r'
                                 {
+                                eprintln!("good - {len} : {line}");
                                 } else {
                                     // return error from the thread
+                                    eprintln!("ret err {line}");
                                     return;
                                 }
-                                let mut status = if let Some((key, val)) = line.split_once(": ") {
+                                
+                                let mut status = if line.is_empty() { // first line CGI out is empty 
+                                    // it's error, but try to recover
+                                    format! {"{protocol} 200 OK\r\n"}
+                                } else if let Some((key, val)) = line.split_once(": ") {
                                     let key = key.to_lowercase();
                                     if key != "content-length" && key != "status" {
                                         headers.push_str(&format! {"{line}\r\n"});
@@ -993,37 +1002,41 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     };
                                     format! {"{protocol} {code} {msg}\r\n"}
                                 };
-
-                                loop {
-                                    line.clear();
-                                    if let Ok(len) = buf_reader.read_line(&mut line)
-                                        && len > 0
-                                        && let Some(rc) = line.pop()
-                                        && rc == '\r'
-                                    {
-                                    } else {
-                                        // return error from the thread
-                                        return;
-                                    }
-                                    if line.is_empty() {
-                                        // the end of headers
-                                        break;
-                                    }
-                                    if let Some((key, val)) = line.split_once(": ") {
-                                        let key = key.to_lowercase();
-                                        if key == "location" {
-                                            code_num = 302;
-                                            status = format! {"{protocol} 302 Found\r\n"}
-                                        } else if key == "status"
-                                            && let Some((code, _)) = val.split_once(' ')
+                                if !line.is_empty() {
+                                    loop { //while !line.is_empty() {
+                                        line.clear();
+                                        if let Ok(len) = buf_reader.read_line(&mut line)
+                                            && len > 0
+                                            && let Some(rc) = line.pop()
+                                            && rc == '\n'
+                                            && let Some(rc) = line.pop()
+                                            && rc == '\r'
                                         {
-                                            code_num = code.parse::<u16>().unwrap_or(PARSE_NUM_ERR); // should reject the request if status code unparsable
-                                            status = format! {"{protocol} {val}\r\n"}
-                                        } else if key == "content-type" {
-                                            was_content_type = true;
+                                eprintln!("good2 - {len} : {line}");
+                                        } else {
+                                            // return error from the thread
+                                            return;
                                         }
-                                        if key != "content-length" && key != "status" {
-                                            headers.push_str(&format! {"{line}\r\n"})
+                                        if line.is_empty() {
+                                            // the end of headers
+                                            break;
+                                        }
+                                        if let Some((key, val)) = line.split_once(": ") {
+                                            let key = key.to_lowercase();
+                                            if key == "location" {
+                                                code_num = 302;
+                                                status = format! {"{protocol} 302 Found\r\n"}
+                                            } else if key == "status"
+                                                && let Some((code, _)) = val.split_once(' ')
+                                            {
+                                                code_num = code.parse::<u16>().unwrap_or(PARSE_NUM_ERR); // should reject the request if status code unparsable
+                                                status = format! {"{protocol} {val}\r\n"}
+                                            } else if key == "content-type" {
+                                                was_content_type = true;
+                                            }
+                                            if key != "content-length" && key != "status" {
+                                                headers.push_str(&format! {"{line}\r\n"})
+                                            }
                                         }
                                     }
                                 }
@@ -1041,9 +1054,18 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     //report error
                                     return;
                                 }
-                                // TODO add code to guess content type
+                                let text_html = TYPE_PLAIN.to_string();
+                                let content_type = if let Some(ext) = path_translated.extension() {
+                                    MIME.get()
+                                        .unwrap()
+                                        .get(ext.to_str().unwrap())
+                                        .unwrap_or(&text_html)
+                                } else {
+                                    &text_html
+                                };
+                                headers.push_str(&format!("Content-Type: {content_type}\r\n"))
                             }
-
+eprintln!("headers - {headers}");
                             out_stream.write_all(headers.as_bytes()).unwrap();
                             ////>>>>>>>>>>>>>>>
                             // read until chunk size
@@ -1055,6 +1077,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 buf_reader.read_to_end(&mut buffer).unwrap();
                                 let len = buffer.len(); // why not content-length ?
                                 //eprintln!{"{status}{headers}Content-Length: {len}"}
+                                eprintln!("body - {:?}", String::from_utf8(buffer.to_vec()));
                                 out_stream
                                     .write_all(format! {"Content-Length: {len}\r\n\r\n"}.as_bytes())
                                     .unwrap();
@@ -1112,6 +1135,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         }
                     }
                     load.wait().unwrap();
+                    eprintln!("CGI ended");
                     //LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" {code_num} {}",
                     //   SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis(), })
                 } else {
