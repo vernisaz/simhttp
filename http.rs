@@ -92,19 +92,19 @@ fn init_mapping(mapping: Vec<Mapping>) {
     MAPPING.set(mapping).unwrap()
 }
 
-fn init_terminal(no_terminal: bool) -> () {
+fn init_terminal(no_terminal: bool) {
     NO_TERMINAL.set(no_terminal).unwrap()
 }
 
-fn init_keepalive(keepalive_mins: u64) -> () {
+fn init_keepalive(keepalive_mins: u64) {
     KEEPALIVE_TIMEOUT.set(keepalive_mins).unwrap()
 }
 
-fn init_ping_interval(interval_mins: u64) -> () {
+fn init_ping_interval(interval_mins: u64) {
     PING_INTERVAL.set(interval_mins).unwrap()
 }
 
-fn init_sizing_constrains(req_kilo: u64, resp_kilo: u64, chunk_kilo: usize) -> () {
+fn init_sizing_constrains(req_kilo: u64, resp_kilo: u64, chunk_kilo: usize) {
     SIZING_CONSTRAINS
         .set((req_kilo, resp_kilo, chunk_kilo))
         .unwrap()
@@ -918,18 +918,12 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         thread::spawn(move || {
                             let mut buf_reader = BufReader::with_capacity(DUMMY_CHUNK_LEN, stderr);
                             let mut line = String::new();
-                            loop {
-                                if let Ok(len) = buf_reader.read_line(&mut line) {
-                                    // probably limit line len by fn take(self, limit: u64) -> Take<Self>
-                                    if len == 0 {
-                                        break;
-                                    }
-                                    LOGGER.lock().unwrap().trace(&line); // maybe to do not lock for every line and do everything in batch?
-                                    line.clear()
-                                } else {
-                                    // probably report reading error
-                                    break;
-                                }
+                            while let Ok(len) = buf_reader.read_line(&mut line)
+                                && len > 0
+                            {
+                                // probably limit line len by fn take(self, limit: u64) -> Take<Self>
+                                LOGGER.lock().unwrap().trace(&line); // maybe to do not lock for every line and do everything in batch?
+                                line.clear()
                             }
                         });
                     }
@@ -953,14 +947,15 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     && let Some(rc) = line.pop()
                                     && rc == '\r'
                                 {
-                                eprintln!("good - {len} : {line}");
+                                    eprintln!("good - {len} : {line}");
                                 } else {
                                     // return error from the thread
                                     eprintln!("ret err {line}");
                                     return;
                                 }
-                                
-                                let mut status = if line.is_empty() { // first line CGI out is empty 
+
+                                let mut status = if line.is_empty() {
+                                    // first line CGI out is empty
                                     // it's error, but try to recover
                                     format! {"{protocol} 200 OK\r\n"}
                                 } else if let Some((key, val)) = line.split_once(": ") {
@@ -1003,7 +998,8 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     format! {"{protocol} {code} {msg}\r\n"}
                                 };
                                 if !line.is_empty() {
-                                    loop { //while !line.is_empty() {
+                                    loop {
+                                        //while !line.is_empty() {
                                         line.clear();
                                         if let Ok(len) = buf_reader.read_line(&mut line)
                                             && len > 0
@@ -1012,7 +1008,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                             && let Some(rc) = line.pop()
                                             && rc == '\r'
                                         {
-                                eprintln!("good2 - {len} : {line}");
+                                            eprintln!("good2 - {len} : {line}");
                                         } else {
                                             // return error from the thread
                                             return;
@@ -1029,7 +1025,8 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                             } else if key == "status"
                                                 && let Some((code, _)) = val.split_once(' ')
                                             {
-                                                code_num = code.parse::<u16>().unwrap_or(PARSE_NUM_ERR); // should reject the request if status code unparsable
+                                                code_num =
+                                                    code.parse::<u16>().unwrap_or(PARSE_NUM_ERR); // should reject the request if status code unparsable
                                                 status = format! {"{protocol} {val}\r\n"}
                                             } else if key == "content-type" {
                                                 was_content_type = true;
@@ -1040,7 +1037,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         }
                                     }
                                 }
-                                if !out_stream.write_all(status.as_bytes()).is_ok() {
+                                if out_stream.write_all(status.as_bytes()).is_err() {
                                     // report error
                                     return;
                                 }
@@ -1050,7 +1047,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             } else {
                                 // no headers
                                 let status = format! {"{protocol} 200 Ok\r\n"};
-                                if !out_stream.write_all(status.as_bytes()).is_ok() {
+                                if out_stream.write_all(status.as_bytes()).is_err() {
                                     //report error
                                     return;
                                 }
@@ -1065,19 +1062,44 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 };
                                 headers.push_str(&format!("Content-Type: {content_type}\r\n"))
                             }
-eprintln!("headers - {headers}");
+                            eprintln!("headers - {headers}");
                             out_stream.write_all(headers.as_bytes()).unwrap();
                             ////>>>>>>>>>>>>>>>
                             // read until chunk size
                             let (_, _resp_size, chunk_size) = SIZING_CONSTRAINS.get().unwrap();
                             if *chunk_size > 0 {
-                                // make out of variable len
+                                out_stream
+                                    .write_all("Transfer-Encoding: chunked\r\n\r\n".as_bytes())
+                                    .unwrap();
+                                let mut buffer = Vec::with_capacity(*chunk_size);
+                                let mut written = 0;
+                                while let Ok(len) = buf_reader.read(&mut buffer)
+                                    && len > 0
+                                {
+                                    let let_mark = format!("{len:x}\r\n");
+                                    if out_stream.write_all(let_mark.as_bytes()).is_ok() {
+                                        written += let_mark.len()
+                                    } else {
+                                        break;
+                                    }
+                                    if out_stream.write_all(&buffer[..len]).is_ok() {
+                                        written += len
+                                    } else {
+                                        break;
+                                    }
+                                }
+                                if out_stream.write_all("0\r\n".as_bytes()).is_ok() {
+                                    written += 3;
+                                    let _ = out_stream.flush();
+                                }
+                                LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" {code_num} {}",
+                       SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis(), written})
                             } else {
                                 let mut buffer = Vec::with_capacity(DUMMY_CHUNK_LEN);
                                 buf_reader.read_to_end(&mut buffer).unwrap();
                                 let len = buffer.len(); // why not content-length ?
                                 //eprintln!{"{status}{headers}Content-Length: {len}"}
-                                eprintln!("body - {:?}", String::from_utf8(buffer.to_vec()));
+                                //eprintln!("body - {:?}", String::from_utf8(buffer.to_vec()));
                                 out_stream
                                     .write_all(format! {"Content-Length: {len}\r\n\r\n"}.as_bytes())
                                     .unwrap();
