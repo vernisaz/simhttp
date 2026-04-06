@@ -395,7 +395,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                 if path.ends_with('/') {
                     if e.cgi && e.ext.is_some() {
                         path += &("index.".to_owned() + &e.ext.clone().unwrap())
-                    } else if ! e.cgi {
+                    } else if !e.cgi {
                         path += "index.html"
                     }
                 }
@@ -936,196 +936,193 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         });
                     }
 
-                    if let Some(stdout) = load.stdout.take() {
-                        let mut out_stream = stream.try_clone()?;
-                        // a thread for sending CGI out to a browser
-                        thread::spawn(move || {
-                            let mut buf_reader = BufReader::with_capacity(DUMMY_CHUNK_LEN, stdout);
-                            let mut line = String::with_capacity(DUMMY_CHUNK_LEN);
-                            let mut was_content_type = false;
-                            // process headers
-                            let mut code_num = 200;
-                            let mut headers = String::with_capacity(DUMMY_CHUNK_LEN);
-                            if !no_headers {
-                                // status line
-                                if let Ok(len) = buf_reader.read_line(&mut line)
-                                    && len > 0
-                                    && let Some(rc) = line.pop()
-                                    && rc == '\n'
-                                    && let Some(rc) = line.pop()
-                                    && rc == '\r'
-                                {
-                                    //eprintln!("good - {len} : {line}");
-                                } else {
-                                    // return error from the thread
-                                    eprintln!("ret err {line}");
-                                    return;
-                                }
+                    let stdout = load
+                        .stdout
+                        .take()
+                        .ok_or(io::Error::other("no stdout of CGI"))?;
+                    let mut out_stream = stream.try_clone()?;
+                    // a thread for sending CGI out to a browser
+                    thread::spawn(move || {
+                        let mut buf_reader = BufReader::with_capacity(DUMMY_CHUNK_LEN, stdout);
+                        let mut line = String::with_capacity(DUMMY_CHUNK_LEN);
+                        let mut was_content_type = false;
+                        // process headers
+                        let mut code_num = 200;
+                        let mut headers = String::with_capacity(DUMMY_CHUNK_LEN);
+                        if !no_headers {
+                            // status line
+                            if let Ok(len) = buf_reader.read_line(&mut line)
+                                && len > 0
+                                && let Some(rc) = line.pop()
+                                && rc == '\n'
+                                && let Some(rc) = line.pop()
+                                && rc == '\r'
+                            {
+                                //eprintln!("good - {len} : {line}");
+                            } else {
+                                // return error from the thread
+                                //eprintln!("ret err {line}");
+                                return;
+                            }
 
-                                let mut status = if line.is_empty() {
-                                    // first line CGI out is empty
-                                    // it's error, but try to recover
+                            let mut status = if line.is_empty() {
+                                // first line CGI out is empty
+                                // it's error, but try to recover
+                                format! {"{protocol} 200 OK\r\n"}
+                            } else if let Some((key, val)) = line.split_once(": ") {
+                                let key = key.to_lowercase();
+                                if key != "content-length" && key != "status" {
+                                    headers.push_str(&format! {"{line}\r\n"});
+                                }
+                                if key == "content-type" {
+                                    was_content_type = true;
+                                }
+                                if key == "location" {
+                                    code_num = 302;
+                                    format! {"{protocol} 302 Found\r\n"}
+                                } else if key == "status" {
+                                    if let Some((code, _)) = val.split_once(' ') {
+                                        code_num = code.parse::<u16>().unwrap_or(PARSE_NUM_ERR);
+                                        format! {"{protocol} {val}\r\n"}
+                                    } else {
+                                        code_num = val.parse::<u16>().unwrap_or(PARSE_NUM_ERR);
+                                        let msg = response_message(code_num);
+                                        format! {"{protocol} {val} {msg}\r\n"}
+                                    }
+                                } else {
                                     format! {"{protocol} 200 OK\r\n"}
-                                } else if let Some((key, val)) = line.split_once(": ") {
-                                    let key = key.to_lowercase();
-                                    if key != "content-length" && key != "status" {
-                                        headers.push_str(&format! {"{line}\r\n"});
+                                }
+                            } else {
+                                let (code, msg) = match line.split_once(' ') {
+                                    Some((code, msg)) => {
+                                        code_num = code.parse::<u16>().unwrap_or(PARSE_NUM_ERR);
+                                        (code.to_string(), msg.to_string())
                                     }
-                                    if key == "content-type" {
-                                        was_content_type = true;
+                                    None => {
+                                        code_num = line.parse::<u16>().unwrap_or(PARSE_NUM_ERR);
+                                        (line.to_string(), response_message(code_num).to_string())
                                     }
-                                    if key == "location" {
-                                        code_num = 302;
-                                        format! {"{protocol} 302 Found\r\n"}
-                                    } else if key == "status" {
-                                        if let Some((code, _)) = val.split_once(' ') {
-                                            code_num = code.parse::<u16>().unwrap_or(PARSE_NUM_ERR);
-                                            format! {"{protocol} {val}\r\n"}
-                                        } else {
-                                            code_num = val.parse::<u16>().unwrap_or(PARSE_NUM_ERR);
-                                            let msg = response_message(code_num);
-                                            format! {"{protocol} {val} {msg}\r\n"}
-                                        }
-                                    } else {
-                                        format! {"{protocol} 200 OK\r\n"}
-                                    }
-                                } else {
-                                    let (code, msg) = match line.split_once(' ') {
-                                        Some((code, msg)) => {
-                                            code_num = code.parse::<u16>().unwrap_or(PARSE_NUM_ERR);
-                                            (code.to_string(), msg.to_string())
-                                        }
-                                        None => {
-                                            code_num = line.parse::<u16>().unwrap_or(PARSE_NUM_ERR);
-                                            (
-                                                line.to_string(),
-                                                response_message(code_num).to_string(),
-                                            )
-                                        }
-                                    };
-                                    format! {"{protocol} {code} {msg}\r\n"}
                                 };
-                                if !line.is_empty() {
-                                    loop {
-                                        //while !line.is_empty() {
-                                        line.clear();
-                                        if let Ok(len) = buf_reader.read_line(&mut line)
-                                            && len > 0
-                                            && let Some(rc) = line.pop()
-                                            && rc == '\n'
-                                            && let Some(rc) = line.pop()
-                                            && rc == '\r'
+                                format! {"{protocol} {code} {msg}\r\n"}
+                            };
+                            if !line.is_empty() {
+                                loop {
+                                    //while !line.is_empty() {
+                                    line.clear();
+                                    if let Ok(len) = buf_reader.read_line(&mut line)
+                                        && len > 0
+                                        && let Some(rc) = line.pop()
+                                        && rc == '\n'
+                                        && let Some(rc) = line.pop()
+                                        && rc == '\r'
+                                    {
+                                        //eprintln!("good2 - {len} : {line}");
+                                    } else {
+                                        // return error from the thread
+                                        return;
+                                    }
+                                    if line.is_empty() {
+                                        // the end of headers
+                                        break;
+                                    }
+                                    if let Some((key, val)) = line.split_once(": ") {
+                                        let key = key.to_lowercase();
+                                        if key == "location" {
+                                            code_num = 302;
+                                            status = format! {"{protocol} 302 Found\r\n"}
+                                        } else if key == "status"
+                                            && let Some((code, _)) = val.split_once(' ')
                                         {
-                                            //eprintln!("good2 - {len} : {line}");
-                                        } else {
-                                            // return error from the thread
-                                            return;
+                                            code_num = code.parse::<u16>().unwrap_or(PARSE_NUM_ERR); // should reject the request if status code unparsable
+                                            status = format! {"{protocol} {val}\r\n"}
+                                        } else if key == "content-type" {
+                                            was_content_type = true;
                                         }
-                                        if line.is_empty() {
-                                            // the end of headers
-                                            break;
-                                        }
-                                        if let Some((key, val)) = line.split_once(": ") {
-                                            let key = key.to_lowercase();
-                                            if key == "location" {
-                                                code_num = 302;
-                                                status = format! {"{protocol} 302 Found\r\n"}
-                                            } else if key == "status"
-                                                && let Some((code, _)) = val.split_once(' ')
-                                            {
-                                                code_num =
-                                                    code.parse::<u16>().unwrap_or(PARSE_NUM_ERR); // should reject the request if status code unparsable
-                                                status = format! {"{protocol} {val}\r\n"}
-                                            } else if key == "content-type" {
-                                                was_content_type = true;
-                                            }
-                                            if key != "content-length" && key != "status" {
-                                                headers.push_str(&format! {"{line}\r\n"})
-                                            }
+                                        if key != "content-length" && key != "status" {
+                                            headers.push_str(&format! {"{line}\r\n"})
                                         }
                                     }
                                 }
-                                if out_stream.write_all(status.as_bytes()).is_err() {
-                                    // report error
-                                    return;
-                                }
-                                if !was_content_type {
-                                    headers.push_str("Content-Type: text/html\r\n")
-                                }
+                            }
+                            if out_stream.write_all(status.as_bytes()).is_err() {
+                                // report error
+                                return;
+                            }
+                            if !was_content_type {
+                                headers.push_str("Content-Type: text/html\r\n")
+                            }
+                        } else {
+                            // no headers
+                            let status = format! {"{protocol} 200 Ok\r\n"};
+                            if out_stream.write_all(status.as_bytes()).is_err() {
+                                //report error
+                                return;
+                            }
+                            let text_html = TYPE_PLAIN.to_string();
+                            let content_type = if let Some(ext) = path_translated.extension() {
+                                MIME.get()
+                                    .unwrap()
+                                    .get(ext.to_str().unwrap())
+                                    .unwrap_or(&text_html)
                             } else {
-                                // no headers
-                                let status = format! {"{protocol} 200 Ok\r\n"};
-                                if out_stream.write_all(status.as_bytes()).is_err() {
-                                    //report error
-                                    return;
+                                &text_html
+                            };
+                            headers.push_str(&format!("Content-Type: {content_type}\r\n"))
+                        }
+                        eprintln!("headers - {headers}");
+                        out_stream.write_all(headers.as_bytes()).unwrap();
+                        let mut written = 0;
+                        // read until chunk size
+                        let (_, resp_size, chunk_size) = SIZING_CONSTRAINS.get().unwrap();
+                        if *chunk_size > 0 {
+                            out_stream
+                                .write_all("Transfer-Encoding: chunked\r\n\r\n".as_bytes())
+                                .unwrap();
+                            let mut buffer = Vec::with_capacity(*chunk_size);
+                            while let Ok(len) = buf_reader.read(&mut buffer)
+                                && len > 0
+                            {
+                                if *resp_size > 0 && *resp_size < written {
+                                    continue; // max len reached
                                 }
-                                let text_html = TYPE_PLAIN.to_string();
-                                let content_type = if let Some(ext) = path_translated.extension() {
-                                    MIME.get()
-                                        .unwrap()
-                                        .get(ext.to_str().unwrap())
-                                        .unwrap_or(&text_html)
+                                let let_mark = format!("{len:x}\r\n");
+                                if out_stream.write_all(let_mark.as_bytes()).is_ok() {
+                                    written += let_mark.len() as u64
                                 } else {
-                                    &text_html
-                                };
-                                headers.push_str(&format!("Content-Type: {content_type}\r\n"))
-                            }
-                            eprintln!("headers - {headers}");
-                            out_stream.write_all(headers.as_bytes()).unwrap();
-                            let mut written = 0;
-                            // read until chunk size
-                            let (_, resp_size, chunk_size) = SIZING_CONSTRAINS.get().unwrap();
-                            if *chunk_size > 0 {
-                                out_stream
-                                    .write_all("Transfer-Encoding: chunked\r\n\r\n".as_bytes())
-                                    .unwrap();
-                                let mut buffer = Vec::with_capacity(*chunk_size);
-                                while let Ok(len) = buf_reader.read(&mut buffer)
-                                    && len > 0
-                                {
-                                    if *resp_size > 0 && *resp_size < written {
-                                        continue; // max len reached
-                                    }
-                                    let let_mark = format!("{len:x}\r\n");
-                                    if out_stream.write_all(let_mark.as_bytes()).is_ok() {
-                                        written += let_mark.len() as u64
-                                    } else {
-                                        break;
-                                    }
-                                    if out_stream.write_all(&buffer[..len]).is_ok() {
-                                        written += len as u64
-                                    } else {
-                                        break;
-                                    }
-                                    if out_stream.write_all("\r\n".as_bytes()).is_ok() {
-                                        // there is a possibilty to push out extra headers
-                                        written += 2;
-                                    }
+                                    break;
                                 }
-                                if out_stream.write_all("0\r\n\r\n".as_bytes()).is_ok() {
+                                if out_stream.write_all(&buffer[..len]).is_ok() {
+                                    written += len as u64
+                                } else {
+                                    break;
+                                }
+                                if out_stream.write_all("\r\n".as_bytes()).is_ok() {
                                     // there is a possibilty to push out extra headers
-                                    written += 5;
-                                    let _ = out_stream.flush();
-                                }
-                            } else {
-                                let mut buffer = Vec::with_capacity(DUMMY_CHUNK_LEN);
-                                buf_reader.read_to_end(&mut buffer).unwrap();
-                                written = buffer.len() as u64; // why not content-length ?
-                                //eprintln!{"{status}{headers}Content-Length: {len}"}
-                                //eprintln!("body - {:?}", String::from_utf8(buffer.to_vec()));
-                                out_stream
-                                    .write_all(format! {"Content-Length: {len}\r\n\r\n"}.as_bytes())
-                                    .unwrap();
-                                if written > 0 && out_stream.write_all(&buffer).is_ok() {
-                                    let _ = out_stream.flush();
+                                    written += 2;
                                 }
                             }
-                            LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" {code_num} {}",
+                            if out_stream.write_all("0\r\n\r\n".as_bytes()).is_ok() {
+                                // there is a possibilty to push out extra headers
+                                written += 5;
+                                let _ = out_stream.flush();
+                            }
+                        } else {
+                            let mut buffer = Vec::with_capacity(DUMMY_CHUNK_LEN);
+                            buf_reader.read_to_end(&mut buffer).unwrap();
+                            written = buffer.len() as u64; // why not content-length ?
+                            //eprintln!{"{status}{headers}Content-Length: {len}"}
+                            //eprintln!("body - {:?}", String::from_utf8(buffer.to_vec()));
+                            out_stream
+                                .write_all(format! {"Content-Length: {len}\r\n\r\n"}.as_bytes())
+                                .unwrap();
+                            if written > 0 && out_stream.write_all(&buffer).is_ok() {
+                                let _ = out_stream.flush();
+                            }
+                        }
+                        LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" {code_num} {}",
                        SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis(), written})
-                        });
-                    } else {
-                        // no stdout, report no data 100
-                    }
+                    });
+
                     if let Some(mut stdin) = load.stdin.take() {
                         match extra {
                             BufType::Buf(extra) => {
@@ -1169,11 +1166,11 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         }
                     }
                     load.wait().unwrap();
-                    eprintln!("CGI ended");
                     //LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" {code_num} {}",
                     //   SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis(), })
                 } else {
-                    let modified = fs::metadata(&path_translated)?.modified()?;
+                    let metadata = fs::metadata(&path_translated)?;
+                    let modified = metadata.modified()?;
                     if since > 0
                         && modified
                             .duration_since(SystemTime::UNIX_EPOCH)
@@ -1192,7 +1189,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         return Ok(());
                     }
                     let mut f = File::open(&path_translated)?;
-                    let mut buffer = Vec::with_capacity(4096);
+
                     let c_type = if let Some(ext) = path_translated.extension() {
                         MIME.get()
                             .unwrap()
@@ -1201,22 +1198,41 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                     } else {
                         "octet-stream"
                     };
-                    // read the whole file
-                    f.read_to_end(&mut buffer)?;
+                    let (_, resp_size, chunk_size) = SIZING_CONSTRAINS.get().unwrap();
+                    let length = metadata.len();
+                    if *resp_size > 0 && length > *resp_size {
+                        report_error(500, &request_line, stream)?
+                    } else {
+                        let time = http_format_time(modified);
+                        let response = format!(
+                            "{protocol} 200 OK\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\nLast-modified: {time}\r\n\r\n"
+                        );
+                        stream.write_all(response.as_bytes())?;
 
-                    let time = http_format_time(modified);
-                    let length = buffer.len();
-                    let response = format!(
-                        "{protocol} 200 OK\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\nLast-modified: {time}\r\n\r\n"
-                    );
+                        if *chunk_size > 0 && length > *chunk_size as u64 {
+                            let num_chunks = len / *chunk_size;
+                            let reminder = len / *chunk_size;
 
-                    stream.write_all(response.as_bytes())?;
-                    stream.write_all(&buffer)?;
-                    // log
-                    LOGGER.lock().unwrap().info(
+                            let mut buffer = Vec::with_capacity(*chunk_size);
+                            for _ in 0..num_chunks {
+                                f.read_exact(&mut buffer)?;
+                                stream.write_all(&buffer)?;
+                            }
+                            let remain_buffer = &mut buffer[..reminder];
+                            f.read_exact(remain_buffer)?;
+                            stream.write_all(remain_buffer)?;
+                        } else {
+                            let mut buffer = Vec::with_capacity(length as usize);
+                            // read the whole file
+                            f.read_to_end(&mut buffer)?;
+                            stream.write_all(&buffer)?;
+                        }
+                        // log
+                        LOGGER.lock().unwrap().info(
                         &format! {"{addr} -- [{:>10}] \"{request_line}\" 200 {length}",
                         SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis()},
                     )
+                    }
                 }
             }
             _ => report_error(404, &request_line, stream)?,
