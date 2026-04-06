@@ -42,11 +42,6 @@ struct Mapping {
     options: Option<Vec<(String, String)>>, // "Map" doesnt't give benefits over duplication keys
 }
 
-struct CgiOut {
-    load: Vec<u8>,
-    pos: usize,
-}
-
 enum BufType<T> {
     BufReader((BufReader<T>, u64)),
     Buf(Vec<u8>),
@@ -227,15 +222,15 @@ fn main() -> Result<(), Box<dyn GenError>> {
 
     init_sizing_constrains(
         match env.get("max_request_size_kilo") {
-            Some(Num(val)) => *val as u64,
+            Some(Num(val)) => (*val as u64) * 1024,
             _ => 0_u64,
         },
         match env.get("max_response_size_kilo") {
-            Some(Num(val)) => *val as u64,
+            Some(Num(val)) => (*val as u64) * 1024,
             _ => 0_u64,
         },
         match env.get("max_chunk_size_kilo") {
-            Some(Num(val)) => *val as usize,
+            Some(Num(val)) => (*val as usize) * 1024,
             _ => 0_usize,
         },
     );
@@ -335,14 +330,18 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
     line.truncate(len - 2); // \r\n
     let request_line = line.clone();
     let mut parts = request_line.splitn(3, ' '); // split_whitespace
-    let method = parts.next().ok_or(io::Error::other("invalid request"))?; // can't be due len check
+    let method = parts
+        .next()
+        .ok_or(io::Error::other("invalid request"))?
+        .to_owned(); // can't be due len check
     let mut path = parts
         .next()
         .ok_or(io::Error::other("invalid request - no path"))?
         .to_string();
     let protocol = parts
         .next()
-        .ok_or(io::Error::other("invalid request - no protocol"))?;
+        .ok_or(io::Error::other("invalid request - no protocol"))?
+        .to_owned();
     let query = match path.find('?') {
         Some(qp) => {
             let query = &path[qp + 1..].to_string();
@@ -913,6 +912,163 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             .spawn()?
                     };
                     let _ = stream.set_read_timeout(None);
+                    if let Some(stderr) = load.stderr.take() {
+                        // a thread for consuming error
+                        thread::spawn(move || {
+                            let mut buf_reader = BufReader::with_capacity(DUMMY_CHUNK_LEN, stderr);
+                            let mut line = String::new();
+                            loop {
+                                if let Ok(len) = buf_reader.read_line(&mut line) {
+                                    // probably limit line len by fn take(self, limit: u64) -> Take<Self>
+                                    if len == 0 {
+                                        break;
+                                    }
+                                    LOGGER.lock().unwrap().trace(&line); // maybe to do not lock for every line and do everything in batch?
+                                    line.clear()
+                                } else {
+                                    // probably report reading error
+                                    break;
+                                }
+                            }
+                        });
+                    }
+
+                    if let Some(stdout) = load.stdout.take() {
+                        let mut out_stream = stream.try_clone()?;
+                        // a thread for sending CGI out to a browser
+                        thread::spawn(move || {
+                            let mut buf_reader = BufReader::with_capacity(DUMMY_CHUNK_LEN, stdout);
+                            let mut line = String::with_capacity(DUMMY_CHUNK_LEN);
+                            let mut was_content_type = false;
+                            // process headers
+                            let mut code_num = 200;
+                            let mut headers = String::with_capacity(DUMMY_CHUNK_LEN);
+                            if !no_headers {
+                                // status line
+                                if let Ok(len) = buf_reader.read_line(&mut line)
+                                    && len > 0
+                                    && let Some(rc) = line.pop()
+                                    && rc == '\r'
+                                {
+                                } else {
+                                    // return error from the thread
+                                    return;
+                                }
+                                let mut status = if let Some((key, val)) = line.split_once(": ") {
+                                    let key = key.to_lowercase();
+                                    if key != "content-length" && key != "status" {
+                                        headers.push_str(&format! {"{line}\r\n"});
+                                    }
+                                    if key == "content-type" {
+                                        was_content_type = true;
+                                    }
+                                    if key == "location" {
+                                        code_num = 302;
+                                        format! {"{protocol} 302 Found\r\n"}
+                                    } else if key == "status" {
+                                        if let Some((code, _)) = val.split_once(' ') {
+                                            code_num = code.parse::<u16>().unwrap_or(PARSE_NUM_ERR);
+                                            format! {"{protocol} {val}\r\n"}
+                                        } else {
+                                            code_num = val.parse::<u16>().unwrap_or(PARSE_NUM_ERR);
+                                            let msg = response_message(code_num);
+                                            format! {"{protocol} {val} {msg}\r\n"}
+                                        }
+                                    } else {
+                                        format! {"{protocol} 200 OK\r\n"}
+                                    }
+                                } else {
+                                    let (code, msg) = match line.split_once(' ') {
+                                        Some((code, msg)) => {
+                                            code_num = code.parse::<u16>().unwrap_or(PARSE_NUM_ERR);
+                                            (code.to_string(), msg.to_string())
+                                        }
+                                        None => {
+                                            code_num = line.parse::<u16>().unwrap_or(PARSE_NUM_ERR);
+                                            (
+                                                line.to_string(),
+                                                response_message(code_num).to_string(),
+                                            )
+                                        }
+                                    };
+                                    format! {"{protocol} {code} {msg}\r\n"}
+                                };
+
+                                loop {
+                                    line.clear();
+                                    if let Ok(len) = buf_reader.read_line(&mut line)
+                                        && len > 0
+                                        && let Some(rc) = line.pop()
+                                        && rc == '\r'
+                                    {
+                                    } else {
+                                        // return error from the thread
+                                        return;
+                                    }
+                                    if line.is_empty() {
+                                        // the end of headers
+                                        break;
+                                    }
+                                    if let Some((key, val)) = line.split_once(": ") {
+                                        let key = key.to_lowercase();
+                                        if key == "location" {
+                                            code_num = 302;
+                                            status = format! {"{protocol} 302 Found\r\n"}
+                                        } else if key == "status"
+                                            && let Some((code, _)) = val.split_once(' ')
+                                        {
+                                            code_num = code.parse::<u16>().unwrap_or(PARSE_NUM_ERR); // should reject the request if status code unparsable
+                                            status = format! {"{protocol} {val}\r\n"}
+                                        } else if key == "content-type" {
+                                            was_content_type = true;
+                                        }
+                                        if key != "content-length" && key != "status" {
+                                            headers.push_str(&format! {"{line}\r\n"})
+                                        }
+                                    }
+                                }
+                                if !out_stream.write_all(status.as_bytes()).is_ok() {
+                                    // report error
+                                    return;
+                                }
+                                if !was_content_type {
+                                    headers.push_str("Content-Type: text/html\r\n")
+                                }
+                            } else {
+                                // no headers
+                                let status = format! {"{protocol} 200 Ok\r\n"};
+                                if !out_stream.write_all(status.as_bytes()).is_ok() {
+                                    //report error
+                                    return;
+                                }
+                                // TODO add code to guess content type
+                            }
+
+                            out_stream.write_all(headers.as_bytes()).unwrap();
+                            ////>>>>>>>>>>>>>>>
+                            // read until chunk size
+                            let (_, _resp_size, chunk_size) = SIZING_CONSTRAINS.get().unwrap();
+                            if *chunk_size > 0 {
+                                // make out of variable len
+                            } else {
+                                let mut buffer = Vec::with_capacity(DUMMY_CHUNK_LEN);
+                                buf_reader.read_to_end(&mut buffer).unwrap();
+                                let len = buffer.len(); // why not content-length ?
+                                //eprintln!{"{status}{headers}Content-Length: {len}"}
+                                out_stream
+                                    .write_all(format! {"Content-Length: {len}\r\n\r\n"}.as_bytes())
+                                    .unwrap();
+                                if len > 0 {
+                                    out_stream.write_all(&buffer).unwrap();
+                                    //eprintln!{"{:?}", String::from_utf8_lossy(&output.rest())}
+                                }
+                                LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" {code_num} {}",
+                       SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis(), len})
+                            }
+                        });
+                    } else {
+                        // no stdout, report no data 100
+                    }
                     if let Some(mut stdin) = load.stdin.take() {
                         match extra {
                             BufType::Buf(extra) => {
@@ -922,140 +1078,42 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             }
                             BufType::BufReader((mut in_reader, len)) => {
                                 //thread::spawn(move || {
-                                    //let  (_,_,chunk_size) = SIZING_CONSTRAINS.get().unwrap();
-                                    let mut buffer = vec![0u8; DUMMY_CHUNK_LEN];
-                                    let mut processed_len = len;
+                                //let  (_,_,chunk_size) = SIZING_CONSTRAINS.get().unwrap();
+                                let mut buffer = vec![0u8; DUMMY_CHUNK_LEN];
+                                let mut processed_len = len;
 
-                                    while processed_len > 0 {
-                                        match if processed_len < DUMMY_CHUNK_LEN as u64 {
-                                            in_reader.read(&mut buffer[..processed_len as usize])
-                                        } else {
-                                            in_reader.read(&mut buffer)
-                                        } {
-                                            Ok(op_len) => {
-                                                if let Err(err) = stdin.write_all(&buffer[..op_len])
-                                                {
-                                                    LOGGER.lock().unwrap().error(&format!{"can't write in CGI script: {err}"});
-                                                    break;
-                                                }
-                                                processed_len -= op_len as u64
-                                            }
-                                            Err(err) => {
+                                while processed_len > 0 {
+                                    match if processed_len < DUMMY_CHUNK_LEN as u64 {
+                                        in_reader.read(&mut buffer[..processed_len as usize])
+                                    } else {
+                                        in_reader.read(&mut buffer)
+                                    } {
+                                        Ok(op_len) => {
+                                            if let Err(err) = stdin.write_all(&buffer[..op_len]) {
                                                 LOGGER.lock().unwrap().error(
-                                                    &format! {"preemptive read error: {err}"},
+                                                    &format! {"can't write in CGI script: {err}"},
                                                 );
                                                 break;
                                             }
+                                            processed_len -= op_len as u64
+                                        }
+                                        Err(err) => {
+                                            LOGGER
+                                                .lock()
+                                                .unwrap()
+                                                .error(&format! {"preemptive read error: {err}"});
+                                            break;
                                         }
                                     }
+                                }
                                 //});
                             }
                             BufType::None => (),
                         }
                     }
-
-                    // such approach will quickly consume all memory, so
-                    // redesign with threads processing out and err
-                    let output = load.wait_with_output()?;
-                    let err = BufReader::new(&*output.stderr);
-                    err.lines().for_each(|line| {
-                        LOGGER.lock().unwrap().trace(&line.unwrap()); // maybe to do not lock for every line and do everything in batch?
-                    });
-                    // println!{"load {}", String::from_utf8_lossy( &output.stdout)}
-                    let mut output = CgiOut {
-                        load: output.stdout,
-                        pos: 0,
-                    };
-                    let mut code_num = 200;
-                    let status = if !no_headers { output.next() } else { None };
-                    if let Some(status) = status {
-                        let mut headers = String::with_capacity(256); // to reduce fragmentation
-                        // first line
-                        let mut status = if let Some((key, val)) = status.split_once(": ") {
-                            let key = key.to_lowercase();
-                            if key != "content-length" && key != "status" {
-                                headers.push_str(&format! {"{status}\r\n"});
-                            }
-                            if key == "location" {
-                                code_num = 302;
-                                format! {"{protocol} 302 Found\r\n"}
-                            } else if key == "status" {
-                                if let Some((code, _)) = val.split_once(' ') {
-                                    code_num = code.parse::<u16>().unwrap_or(PARSE_NUM_ERR);
-                                    format! {"{protocol} {val}\r\n"}
-                                } else {
-                                    code_num = val.parse::<u16>().unwrap_or(PARSE_NUM_ERR);
-                                    let msg = response_message(code_num);
-                                    format! {"{protocol} {val} {msg}\r\n"}
-                                }
-                            } else {
-                                format! {"{protocol} 200 OK\r\n"}
-                            }
-                        } else {
-                            let (code, msg) = match status.split_once(' ') {
-                                Some((code, msg)) => {
-                                    code_num = code.parse::<u16>().unwrap_or(PARSE_NUM_ERR);
-                                    (code.to_string(), msg.to_string())
-                                }
-                                None => {
-                                    code_num = status.parse::<u16>().unwrap_or(PARSE_NUM_ERR);
-                                    (status, response_message(code_num).to_string())
-                                }
-                            };
-                            format! {"{protocol} {code} {msg}\r\n"}
-                        };
-                        let mut was_content_type = false;
-                        while let Some(mut header) = output.next() {
-                            header = header.trim().to_string(); // consider simple trunc(2)
-                            if let Some((key, val)) = header.split_once(": ") {
-                                let key = key.to_lowercase();
-                                if key == "location" {
-                                    code_num = 302;
-                                    status = format! {"{protocol} 302 Found\r\n"}
-                                } else if key == "status"
-                                    && let Some((code, _)) = val.split_once(' ')
-                                {
-                                    code_num = code.parse::<u16>().unwrap_or(PARSE_NUM_ERR); // should reject the request if status code unparsable
-                                    status = format! {"{protocol} {val}\r\n"}
-                                } else if key == "content-type" {
-                                    was_content_type = true;
-                                }
-                                if key != "content-length" && key != "status" {
-                                    headers.push_str(&format! {"{header}\r\n"})
-                                }
-                            }
-                        }
-                        if !was_content_type {
-                            headers.push_str("Content-Type: text/html\r\n")
-                        }
-                        stream.write_all(status.as_bytes())?;
-                        stream.write_all(headers.as_bytes())?;
-                        let len = output.rest_len(); // why not content-length ?
-                        //eprintln!{"{status}{headers}Content-Length: {len}"}
-                        stream.write_all(format! {"Content-Length: {len}\r\n\r\n"}.as_bytes())?;
-                        if len > 0 {
-                            stream.write_all(&output.rest())?;
-                            //eprintln!{"{:?}", String::from_utf8_lossy(&output.rest())}
-                        }
-                    } else {
-                        // no headers
-                        let len = output.rest_len();
-                        let text_html = TYPE_PLAIN.to_string();
-                        let c_type = if let Some(ext) = path_translated.extension() {
-                            MIME.get()
-                                .unwrap()
-                                .get(ext.to_str().unwrap())
-                                .unwrap_or(&text_html)
-                        } else {
-                            &text_html
-                        };
-                        stream.write_all(format!{"{protocol} 200 OK\r\nContent-Type: {c_type}\r\nContent-Length: {len}\r\n\r\n"}.as_bytes())?;
-                        if len > 0 {
-                            stream.write_all(&output.all()).unwrap()
-                        }
-                    }
-                    LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" {code_num} {}",
-                       SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis(), output.rest_len()})
+                    load.wait().unwrap();
+                    //LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" {code_num} {}",
+                    //   SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis(), })
                 } else {
                     let modified = fs::metadata(&path_translated)?.modified()?;
                     if since > 0
@@ -1439,48 +1497,6 @@ fn response_message(code: u16) -> &'static str {
         510 => "Not Extended",
         511 => "Network Authentication Required",
         _ => "Unknown",
-    }
-}
-
-impl CgiOut {
-    fn next(&mut self) -> Option<String> {
-        let start = self.pos;
-        let mut met = false;
-        while self.pos < self.load.len() {
-            if met && self.load[self.pos] == b'\n' {
-                if self.pos - start <= 2 {
-                    return None;
-                } else {
-                    return Some(
-                        String::from_utf8(self.load[start..self.pos - 1].to_vec()).unwrap(),
-                    ); // lossy ?
-                }
-            } else {
-                met = false
-            }
-            if self.load[self.pos] == b'\r' {
-                met = true;
-            }
-            self.pos += 1
-        }
-        self.pos = start;
-        None
-    }
-
-    fn rest_len(&mut self) -> usize {
-        if self.load.is_empty() {
-            0
-        } else {
-            self.load.len() - self.pos - 1
-        }
-    }
-
-    fn rest(&mut self) -> Vec<u8> {
-        self.load[self.pos + 1..].to_vec()
-    }
-
-    fn all(&mut self) -> Vec<u8> {
-        self.load[..].to_vec()
     }
 }
 
