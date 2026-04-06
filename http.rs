@@ -391,10 +391,11 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                 path_translated = Some(ws_file.to_str().unwrap().to_string());
                 // eprintln!{"mapping for ws as  {path_translated:?}"}
             } else {
+                // TODO consolidate with if below
                 if path.ends_with('/') {
                     if e.cgi && e.ext.is_some() {
                         path += &("index.".to_owned() + &e.ext.clone().unwrap())
-                    } else {
+                    } else if ! e.cgi {
                         path += "index.html"
                     }
                 }
