@@ -104,7 +104,15 @@ fn init_ping_interval(interval_mins: u64) {
     PING_INTERVAL.set(interval_mins).unwrap()
 }
 
-fn init_sizing_constrains(req_kilo: u64, resp_kilo: u64, chunk_kilo: usize) {
+fn init_sizing_constrains(mut req_kilo: u64, mut resp_kilo: u64, chunk_kilo: usize) {
+    if chunk_kilo > 0 {
+        if req_kilo > 0 && chunk_kilo as u64 > req_kilo {
+            req_kilo = chunk_kilo as _
+        }
+        if resp_kilo > 0 && chunk_kilo as u64 > resp_kilo {
+            resp_kilo = chunk_kilo as _
+        }
+    }
     SIZING_CONSTRAINS
         .set((req_kilo, resp_kilo, chunk_kilo))
         .unwrap()
@@ -912,7 +920,6 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             .spawn()?
                     };
                     let _ = stream.set_read_timeout(None);
-                    eprintln!("starting cgi");
                     if let Some(stderr) = load.stderr.take() {
                         // a thread for consuming error
                         thread::spawn(move || {
@@ -947,7 +954,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     && let Some(rc) = line.pop()
                                     && rc == '\r'
                                 {
-                                    eprintln!("good - {len} : {line}");
+                                    //eprintln!("good - {len} : {line}");
                                 } else {
                                     // return error from the thread
                                     eprintln!("ret err {line}");
@@ -1008,7 +1015,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                             && let Some(rc) = line.pop()
                                             && rc == '\r'
                                         {
-                                            eprintln!("good2 - {len} : {line}");
+                                            //eprintln!("good2 - {len} : {line}");
                                         } else {
                                             // return error from the thread
                                             return;
@@ -1064,52 +1071,56 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             }
                             eprintln!("headers - {headers}");
                             out_stream.write_all(headers.as_bytes()).unwrap();
-                            ////>>>>>>>>>>>>>>>
+                            let mut written = 0;
                             // read until chunk size
-                            let (_, _resp_size, chunk_size) = SIZING_CONSTRAINS.get().unwrap();
+                            let (_, resp_size, chunk_size) = SIZING_CONSTRAINS.get().unwrap();
                             if *chunk_size > 0 {
                                 out_stream
                                     .write_all("Transfer-Encoding: chunked\r\n\r\n".as_bytes())
                                     .unwrap();
                                 let mut buffer = Vec::with_capacity(*chunk_size);
-                                let mut written = 0;
                                 while let Ok(len) = buf_reader.read(&mut buffer)
                                     && len > 0
                                 {
+                                    if *resp_size > 0 && *resp_size < written {
+                                        continue; // max len reached
+                                    }
                                     let let_mark = format!("{len:x}\r\n");
                                     if out_stream.write_all(let_mark.as_bytes()).is_ok() {
-                                        written += let_mark.len()
+                                        written += let_mark.len() as u64
                                     } else {
                                         break;
                                     }
                                     if out_stream.write_all(&buffer[..len]).is_ok() {
-                                        written += len
+                                        written += len as u64
                                     } else {
                                         break;
                                     }
+                                    if out_stream.write_all("\r\n".as_bytes()).is_ok() {
+                                        // there is a possibilty to push out extra headers
+                                        written += 2;
+                                    }
                                 }
-                                if out_stream.write_all("0\r\n".as_bytes()).is_ok() {
-                                    written += 3;
+                                if out_stream.write_all("0\r\n\r\n".as_bytes()).is_ok() {
+                                    // there is a possibilty to push out extra headers
+                                    written += 5;
                                     let _ = out_stream.flush();
                                 }
-                                LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" {code_num} {}",
-                       SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis(), written})
                             } else {
                                 let mut buffer = Vec::with_capacity(DUMMY_CHUNK_LEN);
                                 buf_reader.read_to_end(&mut buffer).unwrap();
-                                let len = buffer.len(); // why not content-length ?
+                                written = buffer.len() as u64; // why not content-length ?
                                 //eprintln!{"{status}{headers}Content-Length: {len}"}
                                 //eprintln!("body - {:?}", String::from_utf8(buffer.to_vec()));
                                 out_stream
                                     .write_all(format! {"Content-Length: {len}\r\n\r\n"}.as_bytes())
                                     .unwrap();
-                                if len > 0 {
-                                    out_stream.write_all(&buffer).unwrap();
-                                    //eprintln!{"{:?}", String::from_utf8_lossy(&output.rest())}
+                                if written > 0 && out_stream.write_all(&buffer).is_ok() {
+                                    let _ = out_stream.flush();
                                 }
-                                LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" {code_num} {}",
-                       SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis(), len})
                             }
+                            LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" {code_num} {}",
+                       SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis(), written})
                         });
                     } else {
                         // no stdout, report no data 100
