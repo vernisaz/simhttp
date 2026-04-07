@@ -372,7 +372,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
     let mut env_ext = None;
     for e in mapping {
         if path.starts_with(&e.web_path) {
-            //map_entry = Some(&e); // investigate why can't holp a pointer to map entry
+            //map_entry = Some(&e); // investigate why can't hold a pointer to map entry
             if e.websocket
                 && (path == e.web_path || path[e.web_path.len()..e.web_path.len() + 1] == *"/")
             {
@@ -399,14 +399,15 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         path += "index.html"
                     }
                 }
+                let mut deepness = 0;
                 // it can be better to keep web_path as parts
                 if e.cgi {
                     let ext = e.ext.clone().unwrap_or_default();
-
                     // possibly normalize separators here
                     let mut script_parts = path[e.web_path.len()..].split('/');
                     let mut translated = PathBuf::from(e.path.clone());
                     while let Some(part) = script_parts.next() {
+                        deepness += 1;
                         translated = translated.join(part);
                         if translated.is_dir() {
                             continue;
@@ -445,6 +446,10 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         }
                     }
                 }
+                if deepness > 1 {
+                    cgi = false;
+                    script.clear();
+                }
                 if script.is_empty() {
                     let path_buf = PathBuf::from(&e.path);
                     let mut sanitized_parts = PathBuf::with_capacity(256);
@@ -461,7 +466,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                     }
                     path_translated = Some(path_buf.join(sanitized_parts).display().to_string());
                 }
-                // eprintln!{"mapping found as {path_translated:?}"}
+                // eprintln!{"mapping found as {path_translated:?} cgi {cgi} {script}"}
             }
             break;
         } //else { println!{"path {path} not start with {}", e.web_path} }
@@ -1127,13 +1132,9 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                     if let Some(mut stdin) = load.stdin.take() {
                         match extra {
                             BufType::Buf(extra) => {
-                                thread::spawn(move || // TODO consider using a separate thread pool
-                            if let Err(err) = stdin.write_all(&extra) { LOGGER.lock().unwrap().error(&format!{"can't write in CGI script: {err}"}) }
-                        );
+                                if let Err(err) = stdin.write_all(&extra) { LOGGER.lock().unwrap().error(&format!{"can't write in CGI script: {err}"}) }
                             }
                             BufType::BufReader((mut in_reader, len)) => {
-                                //thread::spawn(move || {
-                                //let  (_,_,chunk_size) = SIZING_CONSTRAINS.get().unwrap();
                                 let mut buffer = vec![0u8; DUMMY_CHUNK_LEN];
                                 let mut processed_len = len;
 
@@ -1161,7 +1162,6 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         }
                                     }
                                 }
-                                //});
                             }
                             BufType::None => (),
                         }
@@ -1212,7 +1212,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             let num_chunks = len / *chunk_size;
                             let reminder = len / *chunk_size;
 
-                            let mut buffer = Vec::with_capacity(*chunk_size);
+                            let mut buffer = Vec::with_capacity(*chunk_size); // vec![0_u8; *chunk_size];
                             for _ in 0..num_chunks {
                                 f.read_exact(&mut buffer)?;
                                 stream.write_all(&buffer)?;
