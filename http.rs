@@ -481,11 +481,11 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
         } else {
             #[cfg(unix)]
             {
-                env::vars().filter(|(k, _)| k == "PATH").collect()
+                env::vars().filter(|(k, _)| k == "PATH" || k == "RUST_BACKTRACE").collect()
             }
             #[cfg(target_os = "windows")]
             {
-                env::vars().filter(|(k, _)| k == "Path").collect()
+                env::vars().filter(|(k, _)| k == "Path" || k == "RUST_BACKTRACE").collect()
             }
         };
         // CGI spec: https://datatracker.ietf.org/doc/html/rfc3875
