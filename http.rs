@@ -948,8 +948,9 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                     let mut out_stream = stream.try_clone()?;
                     // a thread for sending CGI out to a browser
                     thread::spawn(move || {
-                        let mut buf_reader = BufReader::with_capacity(DUMMY_CHUNK_LEN, stdout);
-                        let mut line = String::with_capacity(DUMMY_CHUNK_LEN);
+                    let mut buf_reader = BufReader::with_capacity(DUMMY_CHUNK_LEN, stdout);
+                    let mut try_process = || -> io::Result<()> {
+                    let mut line = String::with_capacity(DUMMY_CHUNK_LEN);
                         let mut was_content_type = false;
                         // process headers
                         let mut code_num = 200;
@@ -966,8 +967,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 //eprintln!("good - {len} : {line}");
                             } else {
                                 // return error from the thread
-                                //eprintln!("ret err {line}");
-                                return;
+                                return Err(io::Error::other(format!("empty line or improper line separator in {line}")));
                             }
 
                             let mut status = if line.is_empty() {
@@ -1023,8 +1023,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     {
                                         //eprintln!("good2 - {len} : {line}");
                                     } else {
-                                        // return error from the thread
-                                        return;
+                                        return Err(io::Error::other(format!("empty line or improper line separator in {line}")));
                                     }
                                     if line.is_empty() {
                                         // the end of headers
@@ -1049,20 +1048,14 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     }
                                 }
                             }
-                            if out_stream.write_all(status.as_bytes()).is_err() {
-                                // report error
-                                return;
-                            }
+                            out_stream.write_all(status.as_bytes())?;
                             if !was_content_type {
                                 headers.push_str("Content-Type: text/html\r\n")
                             }
                         } else {
                             // no headers
                             let status = format! {"{protocol} 200 Ok\r\n"};
-                            if out_stream.write_all(status.as_bytes()).is_err() {
-                                //report error
-                                return;
-                            }
+                            out_stream.write_all(status.as_bytes())?;
                             let text_html = TYPE_PLAIN.to_string();
                             let content_type = if let Some(ext) = path_translated.extension() {
                                 MIME.get()
@@ -1075,15 +1068,13 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             headers.push_str(&format!("Content-Type: {content_type}\r\n"))
                         }
                         //eprintln!("headers - {headers}");
-                        out_stream.write_all(headers.as_bytes()).unwrap();
+                        out_stream.write_all(headers.as_bytes())?;
                         let mut written = 0;
                         // read until chunk size
                         let (_, resp_size, chunk_size) = SIZING_CONSTRAINS.get().unwrap();
                         if *chunk_size > 0 {
-                            if out_stream
-                                .write_all("Transfer-Encoding: chunked\r\n\r\n".as_bytes()).is_err() {
-                                    return
-                                }
+                            out_stream
+                                .write_all("Transfer-Encoding: chunked\r\n\r\n".as_bytes())?;
                             let mut buffer = vec![0_u8; *chunk_size];
                             while let Ok(len) = buf_reader.read(&mut buffer)
                                 && len > 0
@@ -1093,41 +1084,40 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 }
                                 let len_mark = format!("{len:x}\r\n");
                                 //eprintln!("chunk: {len_mark}");
-                                if out_stream.write_all(len_mark.as_bytes()).is_ok() {
-                                    written += len_mark.len() as u64
-                                } else {
-                                    break;
-                                }
-                                if out_stream.write_all(&buffer[..len]).is_ok() {
-                                    written += len as u64
-                                } else {
-                                    break;
-                                }
-                                if out_stream.write_all("\r\n".as_bytes()).is_ok() {
+                                out_stream.write_all(len_mark.as_bytes())?;
+                                    written += len_mark.len() as u64;
+                                out_stream.write_all(&buffer[..len])?;
+                                    written += len as u64;
+                                out_stream.write_all("\r\n".as_bytes())?;
                                     // there is a possibilty to push out extra headers
                                     written += 2;
-                                }
                             }
-                            if out_stream.write_all("0\r\n\r\n".as_bytes()).is_ok() {
+                            out_stream.write_all("0\r\n\r\n".as_bytes())?;
                                 // there is a possibilty to push out extra headers
                                 written += 5;
-                                let _ = out_stream.flush();
-                            }
+                                out_stream.flush()?
                         } else {
                             let mut buffer = Vec::with_capacity(DUMMY_CHUNK_LEN);
-                            buf_reader.read_to_end(&mut buffer).unwrap();
+                            buf_reader.read_to_end(&mut buffer)?;
                             written = buffer.len() as u64; // why not content-length ?
                             //eprintln!{"{status}{headers}Content-Length: {written}"}
                             //eprintln!("body - {:?}", String::from_utf8(buffer.to_vec()));
                             out_stream
-                                .write_all(format! {"Content-Length: {written}\r\n\r\n"}.as_bytes())
-                                .unwrap();
-                            if written > 0 && out_stream.write_all(&buffer).is_ok() {
-                                let _ = out_stream.flush();
+                                .write_all(format! {"Content-Length: {written}\r\n\r\n"}.as_bytes())?;
+                            if written > 0 { out_stream.write_all(&buffer)?;
+                                 out_stream.flush()?;
                             }
                         }
-                        LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" {code_num} {}",
-                       SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis(), written})
+                       
+                        Ok(LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" {code_num} {}",
+                       SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis(), written}))
+                       };
+                       if let Err(err) = try_process() {
+                       // maybe consume remaining content from 
+                       let mut buffer = vec![0_u8;DUMMY_CHUNK_LEN]; 
+                       while let Ok(len) = buf_reader.read(&mut buffer) && len > 0 {}
+                           LOGGER.lock().unwrap().error(&format!{"An error at processing CGI responce : {err}"})
+                       }
                     });
                     if let Some(mut stdin) = load.stdin.take() {
                         match extra {
