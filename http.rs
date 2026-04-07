@@ -1069,25 +1069,27 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             };
                             headers.push_str(&format!("Content-Type: {content_type}\r\n"))
                         }
-                        eprintln!("headers - {headers}");
+                        //eprintln!("headers - {headers}");
                         out_stream.write_all(headers.as_bytes()).unwrap();
                         let mut written = 0;
                         // read until chunk size
                         let (_, resp_size, chunk_size) = SIZING_CONSTRAINS.get().unwrap();
                         if *chunk_size > 0 {
-                            out_stream
-                                .write_all("Transfer-Encoding: chunked\r\n\r\n".as_bytes())
-                                .unwrap();
-                            let mut buffer = Vec::with_capacity(*chunk_size);
+                            if out_stream
+                                .write_all("Transfer-Encoding: chunked\r\n\r\n".as_bytes()).is_err() {
+                                    return
+                                }
+                            let mut buffer = vec![0_u8; *chunk_size];
                             while let Ok(len) = buf_reader.read(&mut buffer)
                                 && len > 0
                             {
                                 if *resp_size > 0 && *resp_size < written {
                                     continue; // max len reached
                                 }
-                                let let_mark = format!("{len:x}\r\n");
-                                if out_stream.write_all(let_mark.as_bytes()).is_ok() {
-                                    written += let_mark.len() as u64
+                                let len_mark = format!("{len:x}\r\n");
+                                //eprintln!("chunk: {len_mark}");
+                                if out_stream.write_all(len_mark.as_bytes()).is_ok() {
+                                    written += len_mark.len() as u64
                                 } else {
                                     break;
                                 }
@@ -1110,10 +1112,10 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             let mut buffer = Vec::with_capacity(DUMMY_CHUNK_LEN);
                             buf_reader.read_to_end(&mut buffer).unwrap();
                             written = buffer.len() as u64; // why not content-length ?
-                            //eprintln!{"{status}{headers}Content-Length: {len}"}
+                            //eprintln!{"{status}{headers}Content-Length: {written}"}
                             //eprintln!("body - {:?}", String::from_utf8(buffer.to_vec()));
                             out_stream
-                                .write_all(format! {"Content-Length: {len}\r\n\r\n"}.as_bytes())
+                                .write_all(format! {"Content-Length: {written}\r\n\r\n"}.as_bytes())
                                 .unwrap();
                             if written > 0 && out_stream.write_all(&buffer).is_ok() {
                                 let _ = out_stream.flush();
@@ -1122,7 +1124,6 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" {code_num} {}",
                        SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis(), written})
                     });
-
                     if let Some(mut stdin) = load.stdin.take() {
                         match extra {
                             BufType::Buf(extra) => {
@@ -1166,8 +1167,6 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         }
                     }
                     load.wait().unwrap();
-                    //LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" {code_num} {}",
-                    //   SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis(), })
                 } else {
                     let metadata = fs::metadata(&path_translated)?;
                     let modified = metadata.modified()?;

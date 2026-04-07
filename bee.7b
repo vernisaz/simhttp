@@ -5,7 +5,7 @@ crate_dir=..${~/~}crates
 comp opts=[]
 
 version=1.30
-set_env(VERSION,SimHTTP/${version}b75)
+set_env(VERSION,SimHTTP/${version}b76)
 
 if {
 	eq(${~os~},windows)
@@ -54,6 +54,9 @@ target package {
    \"no terminal\": true,
    \"keep_alive_mins\": 10,
    \"ping_interval_mins\": 32,
+   \"max_chunk_size_kilo\":24576,
+   \"max_response_size_kilo\": 2147483648,
+   \"max_request_size_kilo\": 2147483648,
    \"mapping\" : [
 	   {\"path\":\"/\",
 	   \"translated\": \".${slash}web\"}
