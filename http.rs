@@ -77,7 +77,7 @@ static SIZING_CONSTRAINS: OnceLock<(u64, u64, usize)> = OnceLock::new();
 
 const MAX_LINE_LEN: usize = 64 * 1024;
 
-const DUMMY_CHUNK_LEN: usize = 16 * 1024;
+const DUMMY_CHUNK_LEN: usize = 128 * 1024;
 
 const PARSE_NUM_ERR: u16 = 501;
 
@@ -600,15 +600,11 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
             // currently introduction of size guard can be reasonable
             let (req_size, _, chunk_size) = SIZING_CONSTRAINS.get().unwrap();
             if *req_size > 0 && *req_size < content_len {
-                let num_chunks = content_len / DUMMY_CHUNK_LEN as u64;
-                let remain = (content_len % DUMMY_CHUNK_LEN as u64) as usize;
-                let mut buffer = vec![0u8; DUMMY_CHUNK_LEN];
-                for _ in 0..num_chunks {
-                    buf_reader.read_exact(&mut buffer)?;
-                }
-                if remain > 0 {
-                    buf_reader.read_exact(&mut buffer[..remain])?;
-                }
+            io::copy(
+                &mut buf_reader.by_ref().take(content_len),
+                &mut std::io::sink(),
+            )?;
+                
                 return report_error(413, &request_line, stream);
             }
             if *chunk_size == 0
@@ -619,6 +615,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                 //println!{"input:-> {}", String::from_utf8_lossy( &buffer)}
                 extra = BufType::Buf(buffer)
             } else {
+            //println!("chunk read {content_len}");
                 extra = BufType::BufReader((buf_reader, content_len))
             }
         }
@@ -1156,7 +1153,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     LOGGER
                                         .lock()
                                         .unwrap()
-                                        .error(&format! {"can't write in CGI script: {err}"})
+                                        .error(&format! {"can't write to CGI script {} bytes: {err}", extra.len()})
                                 }
                             }
                             BufType::BufReader((mut in_reader, len)) => {
@@ -1171,11 +1168,11 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     } {
                                         Ok(op_len) => {
                                             if let Err(err) = stdin.write_all(&buffer[..op_len]) {
-                                                LOGGER.lock().unwrap().error(
-                                                    &format! {"can't write in CGI script: {err}"},
-                                                );
+                                                LOGGER.lock().unwrap().error(&format! {"can't write to CGI script {op_len} bytes: {err}"});
                                                 break;
                                             }
+                                            //stdin.flush().unwrap();
+                                            //println!("written {processed_len}");
                                             processed_len -= op_len as u64
                                         }
                                         Err(err) => {
