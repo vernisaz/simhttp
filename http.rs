@@ -620,9 +620,9 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                 buf_reader.read_exact(&mut buffer)?;
                 //println!{"input:-> {}", String::from_utf8_lossy( &buffer)}
                 extra = BufType::Buf(buffer)
+            } else {
+                extra = BufType::BufReader((buf_reader, content_len))
             }
-        } else {
-            extra = BufType::BufReader((buf_reader, content_len))
         }
 
         Some(env)
