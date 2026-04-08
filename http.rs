@@ -399,7 +399,6 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         path += "index.html"
                     }
                 }
-                let mut deepness = 0;
                 // it can be better to keep web_path as parts
                 if e.cgi {
                     let ext = e.ext.clone().unwrap_or_default();
@@ -407,7 +406,6 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                     let mut script_parts = path[e.web_path.len()..].split('/');
                     let mut translated = PathBuf::from(e.path.clone());
                     while let Some(part) = script_parts.next() {
-                        deepness += 1;
                         translated = translated.join(part);
                         if translated.is_dir() {
                             continue;
@@ -445,10 +443,6 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             return report_error(404, &request_line, stream); // format!("script {part} component doesn't exist")
                         }
                     }
-                }
-                if deepness > 1 {
-                    cgi = false;
-                    script.clear();
                 }
                 if script.is_empty() {
                     let path_buf = PathBuf::from(&e.path);
