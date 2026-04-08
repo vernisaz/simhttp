@@ -600,22 +600,20 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
             // currently introduction of size guard can be reasonable
             let (req_size, _, chunk_size) = SIZING_CONSTRAINS.get().unwrap();
             if *req_size > 0 && *req_size < content_len {
-            io::copy(
-                &mut buf_reader.by_ref().take(content_len),
-                &mut std::io::sink(),
-            )?;
-                
+                io::copy(
+                    &mut buf_reader.by_ref().take(content_len),
+                    &mut std::io::sink(),
+                )?;
+
                 return report_error(413, &request_line, stream);
             }
-            if *chunk_size == 0
-                || content_len < *chunk_size as u64
-            {
+            if *chunk_size == 0 || content_len < *chunk_size as u64 {
                 let mut buffer = vec![0u8; content_len as usize];
                 buf_reader.read_exact(&mut buffer)?;
                 //println!{"input:-> {}", String::from_utf8_lossy( &buffer)}
                 extra = BufType::Buf(buffer)
             } else {
-            //println!("chunk read {content_len}");
+                //println!("chunk read {content_len}");
                 extra = BufType::BufReader((buf_reader, content_len))
             }
         }
@@ -1135,15 +1133,12 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             let mut buffer = vec![0_u8; DUMMY_CHUNK_LEN];
                             while let Ok(len) = buf_reader.read(&mut buffer)
                                 && len > 0
+                            // read all remaining data of the process
                             {}
-                            LOGGER
-                                .lock()
-                                .unwrap()
-                                .error(&format! {"An error at processing CGI responce : {err}"});
-                        
-                            -255
+
+                            format!("{err}")
                         } else {
-                            0
+                            String::new()
                         }
                     });
                     if let Some(mut stdin) = load.stdin.take() {
@@ -1189,8 +1184,13 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         }
                     }
                     let stdout_res = stdout_thread.join();
-                    if let Ok(_stdout_res) = stdout_res {
-                        
+                    if let Ok(stdout_res) = stdout_res
+                        && !stdout_res.is_empty()
+                    {
+                        LOGGER
+                            .lock()
+                            .unwrap()
+                            .error(&format! {"An error at processing CGI responce : {stdout_res}"});
                     }
                     load.wait().unwrap();
                 } else {
