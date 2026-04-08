@@ -1188,6 +1188,10 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             BufType::None => (),
                         }
                     }
+                    let stdout_res = stdout_thread.join();
+                    if let Ok(_stdout_res) = stdout_res {
+                        
+                    }
                     load.wait().unwrap();
                 } else {
                     let metadata = fs::metadata(&path_translated)?;
