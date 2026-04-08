@@ -611,9 +611,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                 }
                 return report_error(413, &request_line, stream);
             }
-            if *req_size == 0
-                || *chunk_size == 0
-                || content_len < *req_size
+            if *chunk_size == 0
                 || content_len < *chunk_size as u64
             {
                 let mut buffer = vec![0u8; content_len as usize];
@@ -951,7 +949,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         .ok_or(io::Error::other("no stdout of CGI"))?;
                     let mut out_stream = stream.try_clone()?;
                     // a thread for sending CGI out to a browser
-                    thread::spawn(move || {
+                    let stdout_thread = thread::spawn(move || {
                         let mut buf_reader = BufReader::with_capacity(DUMMY_CHUNK_LEN, stdout);
                         let mut try_process = || -> io::Result<()> {
                             let mut line = String::with_capacity(DUMMY_CHUNK_LEN);
@@ -1144,7 +1142,11 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             LOGGER
                                 .lock()
                                 .unwrap()
-                                .error(&format! {"An error at processing CGI responce : {err}"})
+                                .error(&format! {"An error at processing CGI responce : {err}"});
+                        
+                            -255
+                        } else {
+                            0
                         }
                     });
                     if let Some(mut stdin) = load.stdin.take() {
