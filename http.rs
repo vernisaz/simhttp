@@ -1159,9 +1159,6 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                     }
                     load.wait().unwrap();
                     if let Err(err) = stdout_thread.join() {
-                        //if let Some(err) = err.downcast_ref::<io::Error>() {
-                         //   return err
-                        //}
                         return Err(io::Error::other(format!("{err:?}")))
                     }
                 } else {
