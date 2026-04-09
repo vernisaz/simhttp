@@ -62,17 +62,17 @@ An example of [env.conf](https://github.com/vernisaz/simhttp/blob/master/env.con
 The same executable of the server can be used for multiple configurations. Obviously the listening port or/and the binding
 address have to be different in the configurations.
 
-| JSON attribute | type | purpose |
-| ------------- | -------- | ------------- |
-| bind | string | bind address, `0.0.0.0` for any |
-| port | number | listen port |
-| threads | number | number thread in server thread pool |
-| no terminal | bool | do not use any terminal out |
-| keep_alive_mins | number | keep a connection alive in minutes |
-| ping_interval_mins | number | ping in minutes of a websocket connection |
-| max_chunk_size_kilo | number | max chunk size in kilobytes (0 no chunks, complete load in memory)  |
-| max_response_size_kilo | number | max response size in kilobytes (0 no limit) |
-| max_request_size_kilo | number | max request size in kilobytes (0 no limit) |
+| JSON attribute | Type | Purpose | Default |
+| ------------- | -------- | ------------- | ------------- |
+| bind | string | bind address, `0.0.0.0` for any | none |
+| port | number | listen port | none |
+| threads | number | number thread in server thread pool | none |
+| no terminal | bool | do not use any terminal out | false |
+| keep_alive_mins | number | keep a connection alive in minutes, 0 - one time use | 10 |
+| ping_interval_mins | number | ping in minutes of a websocket connection, 0 - no ping | 30 |
+| max_chunk_size_kilo | number | max chunk size in kilobytes (0 no chunks, the complete load in memory)  | 0 |
+| max_response_size_kilo | number | max response size in kilobytes (0 no limit) | 0 |
+| max_request_size_kilo | number | max request size in kilobytes (0 no limit) | 0 |
 
 ### Supporting secure connections
 Currently the server doesn't support direct SSL/TLS connections. Use any reverse proxies like Nginx, Caddy, or Traefik for that.
