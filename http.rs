@@ -1138,55 +1138,32 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                     if let Some(mut stdin) = load.stdin.take() {
                         match extra {
                             BufType::Buf(extra) => {
-                                if let Err(err) = stdin.write_all(&extra) {
-                                    LOGGER
-                                        .lock()
-                                        .unwrap()
-                                        .error(&format! {"can't write to CGI script {} bytes: {err}", extra.len()})
-                                }
+                                stdin.write_all(&extra)?
                             }
                             BufType::BufReader((mut in_reader, len)) => {
                                 let mut buffer = vec![0u8; DUMMY_CHUNK_LEN];
                                 let mut processed_len = len;
 
                                 while processed_len > 0 {
-                                    match if processed_len < DUMMY_CHUNK_LEN as u64 {
-                                        in_reader.read(&mut buffer[..processed_len as usize])
+                                    let op_len = if processed_len < DUMMY_CHUNK_LEN as u64 {
+                                        in_reader.read(&mut buffer[..processed_len as usize])?
                                     } else {
-                                        in_reader.read(&mut buffer)
-                                    } {
-                                        Ok(op_len) => {
-                                            if let Err(err) = stdin.write_all(&buffer[..op_len]) {
-                                                LOGGER.lock().unwrap().error(&format! {"can't write to CGI script {op_len} bytes: {err}"});
-                                                break;
-                                            }
-                                            //stdin.flush().unwrap();
-                                            //println!("written {processed_len}");
-                                            processed_len -= op_len as u64
-                                        }
-                                        Err(err) => {
-                                            LOGGER
-                                                .lock()
-                                                .unwrap()
-                                                .error(&format! {"preemptive read error: {err}"});
-                                            break;
-                                        }
-                                    }
+                                        in_reader.read(&mut buffer)?
+                                    } ; 
+                                    stdin.write_all(&buffer[..op_len])?;
+                                    processed_len -= op_len as u64
                                 }
                             }
                             BufType::None => (),
                         }
                     }
+                    load.wait().unwrap();
                     let stdout_res = stdout_thread.join();
                     if let Ok(stdout_res) = stdout_res
                         && !stdout_res.is_empty()
                     {
-                        LOGGER
-                            .lock()
-                            .unwrap()
-                            .error(&format! {"An error at processing CGI responce : {stdout_res}"});
+                        return Err(Error::other("stdout_res"))
                     }
-                    load.wait().unwrap();
                 } else {
                     let metadata = fs::metadata(&path_translated)?;
                     let modified = metadata.modified()?;
