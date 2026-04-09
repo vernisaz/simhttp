@@ -938,7 +938,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         .ok_or(io::Error::other("no stdout of CGI"))?;
                     let mut out_stream = stream.try_clone()?;
                     // a thread for sending CGI out to a browser
-                    let stdout_thread = thread::spawn(move || {
+                    let stdout_thread = thread::spawn(move || -> io::Result<()> {
                         let mut buf_reader = BufReader::with_capacity(DUMMY_CHUNK_LEN, stdout);
                         let mut try_process = || -> io::Result<()> {
                             let mut line = String::with_capacity(DUMMY_CHUNK_LEN);
@@ -1130,9 +1130,9 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             // read all remaining data of the process
                             {}
 
-                            format!("{err}")
+                            Err(err)
                         } else {
-                            String::new()
+                            Ok(())
                         }
                     });
                     if let Some(mut stdin) = load.stdin.take() {
@@ -1158,11 +1158,11 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         }
                     }
                     load.wait().unwrap();
-                    let stdout_res = stdout_thread.join();
-                    if let Ok(stdout_res) = stdout_res
-                        && !stdout_res.is_empty()
-                    {
-                        return Err(Error::other("stdout_res"))
+                    if let Err(err) = stdout_thread.join() {
+                        //if let Some(err) = err.downcast_ref::<io::Error>() {
+                         //   return err
+                        //}
+                        return Err(io::Error::other(format!("{err:?}")))
                     }
                 } else {
                     let metadata = fs::metadata(&path_translated)?;
