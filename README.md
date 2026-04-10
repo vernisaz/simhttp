@@ -66,7 +66,7 @@ address have to be different in the configurations.
 | ------------- | -------- | ------------- | ------------- |
 | bind | string | bind address, `0.0.0.0` for any | none |
 | port | number | listen port | none |
-| threads | number | number thread in server thread pool | none |
+| threads | number | number threads in the server thread pool | none |
 | no terminal | bool | do not use any terminal out | false |
 | keep_alive_mins | number | keep a connection alive in minutes, 0 - one time use | 10 |
 | ping_interval_mins | number | ping in minutes of a websocket connection, 0 - no ping | 30 |
