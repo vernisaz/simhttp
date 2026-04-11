@@ -411,9 +411,8 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             continue;
                         } else if translated.is_file()
                             || cfg!(windows)
-                                && (translated.add_extension("exe")
-                                && translated.is_file() || translated.set_extension("bat")
-                                && translated.is_file())
+                                && (translated.add_extension("exe") && translated.is_file()
+                                    || translated.set_extension("bat") && translated.is_file())
                         {
                             if ext.is_empty()
                                 || !ext.is_empty()
@@ -423,9 +422,21 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         == *"."
                             {
                                 script = part.to_string();
-                                let script_ext = if let Some(dot) = script.rfind('.') {&script[dot..]} else {""};
-                                cgi = if ext == script_ext || cfg!(windows) && ext.is_empty() && (script_ext == ".exe" || script_ext == ".bat"){true} else {false};
-                                
+                                let script_ext = if let Some(dot) = script.rfind('.') {
+                                    &script[dot+1..]
+                                } else {
+                                    ""
+                                };
+                                cgi = if ext == script_ext
+                                    || cfg!(windows)
+                                        && ext.is_empty()
+                                        && (script_ext == "exe" || script_ext == "bat")
+                                {
+                                    true
+                                } else {
+                                    false
+                                };
+
                                 let mut acc = String::with_capacity(e.web_path.len());
                                 for e in script_parts.by_ref() {
                                     acc.push('/');
@@ -1140,9 +1151,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                     });
                     if let Some(mut stdin) = load.stdin.take() {
                         match extra {
-                            BufType::Buf(extra) => {
-                                stdin.write_all(&extra)?
-                            }
+                            BufType::Buf(extra) => stdin.write_all(&extra)?,
                             BufType::BufReader((mut in_reader, len)) => {
                                 let mut buffer = vec![0u8; DUMMY_CHUNK_LEN];
                                 let mut processed_len = len;
@@ -1152,7 +1161,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         in_reader.read(&mut buffer[..processed_len as usize])?
                                     } else {
                                         in_reader.read(&mut buffer)?
-                                    } ; 
+                                    };
                                     stdin.write_all(&buffer[..op_len])?;
                                     processed_len -= op_len as u64
                                 }
@@ -1162,7 +1171,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                     }
                     load.wait().unwrap();
                     if let Err(err) = stdout_thread.join() {
-                        return Err(io::Error::other(format!("{err:?}")))
+                        return Err(io::Error::other(format!("{err:?}")));
                     }
                 } else {
                     let metadata = fs::metadata(&path_translated)?;
