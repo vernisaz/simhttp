@@ -411,8 +411,9 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             continue;
                         } else if translated.is_file()
                             || cfg!(windows)
-                                && translated.set_extension("exe")
-                                && translated.is_file()
+                                && (translated.add_extension("exe")
+                                && translated.is_file() || translated.set_extension("bat")
+                                && translated.is_file())
                         {
                             if ext.is_empty()
                                 || !ext.is_empty()
@@ -422,6 +423,9 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                         == *"."
                             {
                                 script = part.to_string();
+                                let script_ext = if let Some(dot) = script.rfind('.') {&script[dot..]} else {""};
+                                cgi = if ext == script_ext || cfg!(windows) && ext.is_empty() && (script_ext == ".exe" || script_ext == ".bat"){true} else {false};
+                                
                                 let mut acc = String::with_capacity(e.web_path.len());
                                 for e in script_parts.by_ref() {
                                     acc.push('/');
@@ -431,7 +435,6 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                     path_info = Some(acc)
                                 }
                                 path_translated = translated.to_str().map(str::to_string);
-                                cgi = true;
                                 wrapper = e.wrapper.clone();
                                 if e.no_headers {
                                     no_headers = e.no_headers
