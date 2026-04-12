@@ -961,7 +961,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             let mut code_num = 200;
                             let mut headers = String::with_capacity(DUMMY_CHUNK_LEN);
                             headers.push_str(&format!(
-                                "Date: {}\r\nServer: SimpleHTTP - version {VERSION}\r\n",
+                                "Date: {}\r\nServer: {VERSION}\r\n",
                                 http_format_time(SystemTime::now())
                             ));
                             if !no_headers {
@@ -1224,7 +1224,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         };
                         let time = http_format_time(modified);
                         let response = format!(
-                            "{protocol} 200 OK\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\nLast-modified: {time}\r\n{keep_alive}Date: {}\r\nServer: SimpleHTTP - version {VERSION}\r\n\r\n",
+                            "{protocol} 200 OK\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\nLast-modified: {time}\r\n{keep_alive}Date: {}\r\nServer: {VERSION}\r\n\r\n",
                             http_format_time(SystemTime::now()),
                         );
                         stream.write_all(response.as_bytes())?;
