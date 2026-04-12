@@ -423,7 +423,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             {
                                 script = part.to_string();
                                 let script_ext = if let Some(dot) = script.rfind('.') {
-                                    &script[dot+1..]
+                                    &script[dot + 1..]
                                 } else {
                                     ""
                                 };
@@ -960,6 +960,10 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             // process headers
                             let mut code_num = 200;
                             let mut headers = String::with_capacity(DUMMY_CHUNK_LEN);
+                            headers.push_str(&format!(
+                                "Date: {}\r\nServer: SimpleHTTP - version {VERSION}\r\n",
+                                http_format_time(SystemTime::now())
+                            ));
                             if !no_headers {
                                 // status line
                                 if let Ok(len) = buf_reader.read_line(&mut line)
@@ -1089,6 +1093,10 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 };
                                 headers.push_str(&format!("Content-Type: {content_type}\r\n"))
                             }
+                            let keep_alive_time = *KEEPALIVE_TIMEOUT.get().unwrap() * 60;
+                            if keep_alive_time > 0 {
+                                headers.push_str(&format!("Connection: Keep-Alive\r\nKeep-Alive: timeout={keep_alive_time}\r\n"))
+                            };
                             //eprintln!("headers - {headers}");
                             out_stream.write_all(headers.as_bytes())?;
                             let mut written = 0;
@@ -1208,9 +1216,16 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                     if *resp_size > 0 && length > *resp_size {
                         report_error(500, &request_line, stream)?
                     } else {
+                        let keep_alive_time = *KEEPALIVE_TIMEOUT.get().unwrap() * 60;
+                        let keep_alive = if keep_alive_time > 0 {
+                            "Connection: Keep-Alive\r\nKeep-Alive: timeout={keep_alive_time}\r\n"
+                        } else {
+                            ""
+                        };
                         let time = http_format_time(modified);
                         let response = format!(
-                            "{protocol} 200 OK\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\nLast-modified: {time}\r\n\r\n"
+                            "{protocol} 200 OK\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\nLast-modified: {time}\r\n{keep_alive}Date: {}\r\nServer: SimpleHTTP - version {VERSION}\r\n\r\n",
+                            http_format_time(SystemTime::now()),
                         );
                         stream.write_all(response.as_bytes())?;
 
