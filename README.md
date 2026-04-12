@@ -1,20 +1,20 @@
 # SimHttp - Rust web server (aka TRWS)
 ## Purpose
-It is a web server for personal Rust/Swift web applications. It supports servicing files and executing 
+It is a web server for personal Rust/Swift/PHP web applications. It supports servicing files and executing 
  [CGI](https://www.rfc-editor.org/rfc/rfc3875) scripts.
 
 ## History
-I've implemented TJWS back in 1999. It has the purpose to run and debug Java web applications. 
+I've implemented TJWS back in 1999. It has a purpose to run and debug Java web applications. 
 However the interest to Java dropped recent years, so I decided to implement a similar purpose server in Rust.
 
-TRWS - is a successor of TJWS, but instead of servlets it runs CGI web applications which can be written in
+TRWS - is a successor of TJWS, but instead of servlets it runs CGI web applications that can be written in
 any language including Rust. It also supports websocket endpoints. They are applications supporting an OS piping mechanism.
 Such approach is more beneficial than offered by other
 Rust web servers, because doesn't require to rebuild the entire server at every serviced app change. 
 
 Obviously SimHttp is CI/CD friendly.
 
-A serviced Rust app can run as in CLI mode as in a web mode without any change.
+A CGI Rust app can run as in CLI mode as in a web mode without any change.
 
 The server is perfectly suitable for an embedded development. You can deploy it on an embedded platform. CGI endpoints can be
 developed in C, Swift, Rust, PHP and so on.
@@ -32,7 +32,7 @@ crates built first.
 - [SimWeb](https://github.com/vernisaz/simweb) -> requires [SimTime](https://github.com/vernisaz/simtime)
 
 
-The directory where all *rlib* resides has to be specified in *crate_dir* variable of
+The directory where all `rlib` resides has to be specified in `crate_dir` variable of
 [bee.7b](https://github.com/vernisaz/simhttp/blob/master/bee.7b) script. 
 It has to exist before building crates and the server.
 
@@ -58,7 +58,8 @@ The server is built by executing _rb_ in its repository.
 
 ## Configuring
 One JSON file is used for configuring the server. The file has to be in the current working directory the server ran from.
-An example of [env.conf](https://github.com/vernisaz/simhttp/blob/master/env.conf) file is a self describing.
+An example of [env.conf](https://github.com/vernisaz/simhttp/blob/master/env.conf) file is a self describing. Specify a current
+working directory in `.service` script, when you launch the server as a service. 
 The same executable of the server can be used for multiple configurations. Obviously the listening port or/and the binding
 address have to be different in the configurations.
 
@@ -74,7 +75,7 @@ address have to be different in the configurations.
 | max_response_size_kilo | number | max response size in kilobytes (0 no limit) | 0 |
 | max_request_size_kilo | number | max request size in kilobytes (0 no limit) | 0 |
 
-### Supporting secure connections
+### Support of secure connections
 Currently the server doesn't support direct SSL/TLS connections. Use any reverse proxies like Nginx, Caddy, or Traefik for that.
 It gives also benefits to run the server from a regular user account.
 
@@ -154,4 +155,4 @@ I couldn't do without _SimHTTP_. SimHTTP is decoupled from deployed Rust applica
 of the server and even dynamically.
 
 ## Status
-Current version is SimHTTP/1.30b77. It's a beta version.
+Current version is SimHTTP/1.30b78. It's a beta version.
