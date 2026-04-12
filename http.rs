@@ -280,9 +280,7 @@ fn main() -> Result<(), Box<dyn GenError>> {
             loop {
                 let keep_alive_secs = *KEEPALIVE_TIMEOUT.get().unwrap();
                 if keep_alive_secs > 0 {
-                let _ = stream.set_read_timeout(Some(Duration::from_secs(
-                    keep_alive_secs,
-                )));
+                    let _ = stream.set_read_timeout(Some(Duration::from_secs(keep_alive_secs)));
                 }
                 // timeout can be reset at handling long polls
                 match handle_connection(&stream) {
@@ -300,11 +298,11 @@ fn main() -> Result<(), Box<dyn GenError>> {
                         break;
                     }
                     _ => {
-                        if stop_two.load(Ordering::SeqCst) || *KEEPALIVE_TIMEOUT.get().unwrap() == 0 {
+                        if stop_two.load(Ordering::SeqCst) || *KEEPALIVE_TIMEOUT.get().unwrap() == 0
+                        {
                             let _ = stream.shutdown(Shutdown::Both);
                             break;
                         }
-                        
                     }
                 }
             }
@@ -1267,7 +1265,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
         // unsupported method
         report_error(405, &request_line, stream)?
     }
-    
+
     if close {
         Err(Error::other("requested close"))
     } else {
