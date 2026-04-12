@@ -96,8 +96,8 @@ fn init_terminal(no_terminal: bool) {
     NO_TERMINAL.set(no_terminal).unwrap()
 }
 
-fn init_keepalive(keepalive_mins: u64) {
-    KEEPALIVE_TIMEOUT.set(keepalive_mins).unwrap()
+fn init_keepalive(keepalive_secs: u64) {
+    KEEPALIVE_TIMEOUT.set(keepalive_secs).unwrap()
 }
 
 fn init_ping_interval(interval_mins: u64) {
@@ -219,7 +219,7 @@ fn main() -> Result<(), Box<dyn GenError>> {
         }
     };
     init_mime(mime2);
-    init_keepalive(match env.get("keep_alive_mins") {
+    init_keepalive(match env.get("keep_alive_secs") {
         Some(Num(val)) if *val >= 0.0 => *val as u64,
         _ => 10_u64,
     });
@@ -278,9 +278,12 @@ fn main() -> Result<(), Box<dyn GenError>> {
         //let res_stream = stream.try_clone().unwrap();
         tp.execute(move || {
             loop {
+                let keep_alive_secs = *KEEPALIVE_TIMEOUT.get().unwrap();
+                if keep_alive_secs > 0 {
                 let _ = stream.set_read_timeout(Some(Duration::from_secs(
-                    60 * KEEPALIVE_TIMEOUT.get().unwrap(),
+                    keep_alive_secs,
                 )));
+                }
                 // timeout can be reset at handling long polls
                 match handle_connection(&stream) {
                     Err(err) => {
@@ -297,9 +300,11 @@ fn main() -> Result<(), Box<dyn GenError>> {
                         break;
                     }
                     _ => {
-                        if stop_two.load(Ordering::SeqCst) {
+                        if stop_two.load(Ordering::SeqCst) || *KEEPALIVE_TIMEOUT.get().unwrap() == 0 {
+                            let _ = stream.shutdown(Shutdown::Both);
                             break;
                         }
+                        
                     }
                 }
             }
@@ -1093,7 +1098,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 };
                                 headers.push_str(&format!("Content-Type: {content_type}\r\n"))
                             }
-                            let keep_alive_time = *KEEPALIVE_TIMEOUT.get().unwrap() * 60;
+                            let keep_alive_time = *KEEPALIVE_TIMEOUT.get().unwrap();
                             if keep_alive_time > 0 {
                                 headers.push_str(&format!("Connection: Keep-Alive\r\nKeep-Alive: timeout={keep_alive_time}\r\n"))
                             };
@@ -1216,7 +1221,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                     if *resp_size > 0 && length > *resp_size {
                         report_error(500, &request_line, stream)?
                     } else {
-                        let keep_alive_time = *KEEPALIVE_TIMEOUT.get().unwrap() * 60;
+                        let keep_alive_time = *KEEPALIVE_TIMEOUT.get().unwrap();
                         let keep_alive = if keep_alive_time > 0 {
                             "Connection: Keep-Alive\r\nKeep-Alive: timeout={keep_alive_time}\r\n"
                         } else {
@@ -1262,6 +1267,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
         // unsupported method
         report_error(405, &request_line, stream)?
     }
+    
     if close {
         Err(Error::other("requested close"))
     } else {
