@@ -499,7 +499,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
             #[cfg(target_os = "windows")]
             {
                 env::vars()
-                    .filter(|(k, _)| k == "Path" || k == "RUST_BACKTRACE")
+                    .filter(|(k, _)| k == "Path" || k == "RUST_BACKTRACE" || k == "SystemRoot")
                     .collect()
             }
         };
