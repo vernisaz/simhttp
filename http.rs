@@ -277,6 +277,7 @@ fn main() -> Result<(), Box<dyn GenError>> {
         let stop_two = stop.clone();
         //let res_stream = stream.try_clone().unwrap();
         tp.execute(move || {
+            //let mut reuse_counter = 0;
             loop {
                 let keep_alive_secs = *KEEPALIVE_TIMEOUT.get().unwrap();
                 if keep_alive_secs > 0 {
