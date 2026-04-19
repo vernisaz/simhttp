@@ -69,7 +69,7 @@ static MAPPING: OnceLock<Vec<Mapping>> = OnceLock::new();
 
 static NO_TERMINAL: OnceLock<bool> = OnceLock::new();
 
-static KEEPALIVE_TIMEOUT: OnceLock<u64> = OnceLock::new();
+static KEEPALIVE: OnceLock<(u16, u16)> = OnceLock::new();
 
 static PING_INTERVAL: OnceLock<u64> = OnceLock::new();
 
@@ -96,8 +96,8 @@ fn init_terminal(no_terminal: bool) {
     NO_TERMINAL.set(no_terminal).unwrap()
 }
 
-fn init_keepalive(keepalive_secs: u64) {
-    KEEPALIVE_TIMEOUT.set(keepalive_secs).unwrap()
+fn init_keepalive(keepalive_constraints: (u16, u16)) {
+    KEEPALIVE.set(keepalive_constraints).unwrap()
 }
 
 fn init_ping_interval(interval_mins: u64) {
@@ -219,10 +219,17 @@ fn main() -> Result<(), Box<dyn GenError>> {
         }
     };
     init_mime(mime2);
-    init_keepalive(match env.get("keep_alive_secs") {
-        Some(Num(val)) if *val >= 0.0 => *val as u64,
-        _ => 10_u64,
-    });
+    init_keepalive(
+        match (env.get("keep_alive_secs"), env.get("max_requests_per_connection")) {
+            (Some(Num(val)), Some(Num(max))) => (
+                if *val >= 0.0 { *val as u16 } else { 10u16 },
+                if *max >= 0.0 { *max as u16 } else { 0u16 },
+            ),
+            (Some(Num(val)), _) => (if *val >= 0.0 { *val as u16 } else { 10u16 }, 0),
+            (_, Some(Num(max))) => (12u16, if *max >= 0.0 { *max as u16 } else { 0u16 }),
+            (_, _) => (10_u16, 0u16),
+        },
+    );
     init_ping_interval(match env.get("ping_interval_mins") {
         Some(Num(val)) => *val as u64,
         _ => 30_u64,
@@ -277,11 +284,12 @@ fn main() -> Result<(), Box<dyn GenError>> {
         let stop_two = stop.clone();
         //let res_stream = stream.try_clone().unwrap();
         tp.execute(move || {
-            //let mut reuse_counter = 0;
+            let mut reuse_counter = 0;
             loop {
-                let keep_alive_secs = *KEEPALIVE_TIMEOUT.get().unwrap();
+                let (keep_alive_secs, max_connections) = *KEEPALIVE.get().unwrap();
                 if keep_alive_secs > 0 {
-                    let _ = stream.set_read_timeout(Some(Duration::from_secs(keep_alive_secs)));
+                    let _ =
+                        stream.set_read_timeout(Some(Duration::from_secs(keep_alive_secs.into())));
                 }
                 // timeout can be reset at handling long polls
                 match handle_connection(&stream) {
@@ -299,9 +307,12 @@ fn main() -> Result<(), Box<dyn GenError>> {
                         break;
                     }
                     _ => {
-                        if stop_two.load(Ordering::SeqCst) || *KEEPALIVE_TIMEOUT.get().unwrap() == 0
-                        {
+                        if stop_two.load(Ordering::SeqCst) || KEEPALIVE.get().unwrap().0 == 0 {
                             let _ = stream.shutdown(Shutdown::Both);
+                            break;
+                        }
+                        reuse_counter += 1;
+                        if max_connections > 0 && max_connections < reuse_counter {
                             break;
                         }
                     }
@@ -431,15 +442,10 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 } else {
                                     ""
                                 };
-                                cgi = if ext == script_ext
+                                cgi = ext == script_ext
                                     || cfg!(windows)
                                         && ext.is_empty()
-                                        && (script_ext == "exe" || script_ext == "bat")
-                                {
-                                    true
-                                } else {
-                                    false
-                                };
+                                        && (script_ext == "exe" || script_ext == "bat");
 
                                 let mut acc = String::with_capacity(e.web_path.len());
                                 for e in script_parts.by_ref() {
@@ -1097,9 +1103,14 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 };
                                 headers.push_str(&format!("Content-Type: {content_type}\r\n"))
                             }
-                            let keep_alive_time = *KEEPALIVE_TIMEOUT.get().unwrap();
+                            let (keep_alive_time, max) = *KEEPALIVE.get().unwrap();
                             if keep_alive_time > 0 {
-                                headers.push_str(&format!("Connection: Keep-Alive\r\nKeep-Alive: timeout={keep_alive_time}\r\n"))
+                                let max_str = if max > 0 {
+                                    format!(", max={max}")
+                                } else {
+                                    "".to_string()
+                                };
+                                headers.push_str(&format!("Connection: Keep-Alive\r\nKeep-Alive: timeout={keep_alive_time}{max_str}\r\n"))
                             };
                             //eprintln!("headers - {headers}");
                             out_stream.write_all(headers.as_bytes())?;
@@ -1220,9 +1231,16 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                     if *resp_size > 0 && length > *resp_size {
                         report_error(500, &request_line, stream)?
                     } else {
-                        let keep_alive_time = *KEEPALIVE_TIMEOUT.get().unwrap();
+                        let (keep_alive_time, max) = *KEEPALIVE.get().unwrap();
                         let keep_alive = if keep_alive_time > 0 {
-                            "Connection: Keep-Alive\r\nKeep-Alive: timeout={keep_alive_time}\r\n"
+                            let max_str = if max > 0 {
+                                format!(", max={max}")
+                            } else {
+                                "".to_string()
+                            };
+                            &format!(
+                                "Connection: Keep-Alive\r\nKeep-Alive: timeout={keep_alive_time}{max_str}\r\n"
+                            )
                         } else {
                             ""
                         };

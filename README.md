@@ -70,6 +70,7 @@ address have to be different in the configurations.
 | threads | number | number threads in the server thread pool | none |
 | no terminal | bool | do not use any terminal out | false |
 | keep_alive_secs | number | keep a connection alive in seconds, 0 - one time use | 10 |
+| max_requests_per_connection | number | max requests in a keep alive connection, 0 - no limit | 0 |
 | ping_interval_mins | number | ping in minutes of a websocket connection, 0 - no ping | 30 |
 | max_chunk_size_kilo | number | max chunk size in kilobytes (0 no chunks, the complete load in memory)  | 0 |
 | max_response_size_kilo | number | max response size in kilobytes (0 no limit) | 0 |
@@ -155,4 +156,4 @@ I couldn't do without _SimHTTP_. SimHTTP is decoupled from deployed Rust applica
 of the server and even dynamically.
 
 ## Status
-Current version is SimHTTP/1.30b79. It's a beta version.
+Current version is SimHTTP/1.30b82. It's a beta version.
