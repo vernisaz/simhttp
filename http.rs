@@ -1,10 +1,12 @@
+#[cfg(feature = "gzip")]
+extern crate libdeflater;
 extern crate rslash;
 extern crate simcli;
 extern crate simjson;
 extern crate simtpool;
 extern crate simweb;
 #[cfg(feature = "gzip")]
-extern crate libdeflater;
+use libdeflater::{CompressionLvl, Compressor};
 use simcli::{CLI, OptTyp, OptVal};
 use simjson::JsonData::{self, Arr, Bool, Data, Num, Text};
 use simtpool::ThreadPool;
@@ -28,8 +30,6 @@ use std::{
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-#[cfg(feature = "gzip")]
-use libdeflater::{Compressor, CompressionLvl};
 mod log;
 use log::{Level, LogFile};
 mod sha1;
@@ -82,6 +82,8 @@ static SIZING_CONSTRAINS: OnceLock<(u64, u64, usize)> = OnceLock::new();
 const MAX_LINE_LEN: usize = 64 * 1024;
 
 const DUMMY_CHUNK_LEN: usize = 128 * 1024;
+
+const GZIP_LOW_BOUNDARY_THRESHOLD: u64 = 256u64;
 
 const PARSE_NUM_ERR: u16 = 501;
 
@@ -224,7 +226,10 @@ fn main() -> Result<(), Box<dyn GenError>> {
     };
     init_mime(mime2);
     init_keepalive(
-        match (env.get("keep_alive_secs"), env.get("max_requests_per_connection")) {
+        match (
+            env.get("keep_alive_secs"),
+            env.get("max_requests_per_connection"),
+        ) {
             (Some(Num(val)), Some(Num(max))) => (
                 if *val >= 0.0 { *val as u16 } else { 10u16 },
                 if *max >= 0.0 { *max as u16 } else { 0u16 },
@@ -1250,16 +1255,18 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         };
                         let time = http_format_time(modified);
                         #[cfg(feature = "gzip")]
-                        let response = if (*chunk_size == 0 || *chunk_size > length as usize) && length > 200 {
+                        let response = if (*chunk_size == 0 || *chunk_size > length as usize)
+                            && length > GZIP_LOW_BOUNDARY_THRESHOLD
+                        { // Note that headers are not finished here, because content length will be calculated after compression
                             format!(
-                            "{protocol} 200 OK\r\nContent-Encoding: gzip\r\nContent-Type: {c_type}\r\nLast-modified: {time}\r\n{keep_alive}Date: {}\r\nServer: {VERSION}\r\n",
-                            http_format_time(SystemTime::now()),
-                        )
+                                "{protocol} 200 OK\r\nContent-Encoding: gzip\r\nContent-Type: {c_type}\r\nLast-modified: {time}\r\n{keep_alive}Date: {}\r\nServer: {VERSION}\r\n",
+                                http_format_time(SystemTime::now()),
+                            )
                         } else {
                             format!(
-                            "{protocol} 200 OK\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\nLast-modified: {time}\r\n{keep_alive}Date: {}\r\nServer: {VERSION}\r\n\r\n",
-                            http_format_time(SystemTime::now()),
-                        )
+                                "{protocol} 200 OK\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\nLast-modified: {time}\r\n{keep_alive}Date: {}\r\nServer: {VERSION}\r\n\r\n",
+                                http_format_time(SystemTime::now()),
+                            )
                         };
                         #[cfg(not(feature = "gzip"))]
                         let response = format!(
@@ -1271,7 +1278,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
 
                         if *chunk_size > 0 && length > *chunk_size as u64 {
                             let num_chunks = len / *chunk_size;
-                            let reminder = len / *chunk_size;
+                            let reminder = len % *chunk_size;
 
                             let mut buffer = Vec::with_capacity(*chunk_size); // vec![0_u8; *chunk_size];
                             for _ in 0..num_chunks {
@@ -1282,33 +1289,39 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             f.read_exact(remain_buffer)?;
                             stream.write_all(remain_buffer)?;
                         } else {
-                        #[cfg(feature = "gzip")]
-                        if length > 200 {
-                            let mut buffer = Vec::with_capacity(length as usize);
-                            // read the whole file
-                            f.read_to_end(&mut buffer)?;
-                            let mut compressor = Compressor::new(CompressionLvl::default());
-                        let max_sz = compressor.deflate_compress_bound(buffer.len());
-                        let mut compressed_data = Vec::with_capacity(max_sz);
-                        compressed_data.resize(max_sz, 0);
-                        let actual_sz = compressor.gzip_compress(&buffer, &mut compressed_data).map_err(|e| Error::other(format!("can't deflate {e}")))?;
-                        compressed_data.resize(actual_sz, 0);
-                        // add length header now
-                        write!(stream, "Content-Length: {}\r\n\r\n", compressed_data.len())?;
-                        stream.write_all(&compressed_data)?;
-                        //debug!("compressed to {actual_sz}")
-                        } else {
-                            let mut buffer = Vec::with_capacity(length as usize);
-                            // read the whole file
-                            f.read_to_end(&mut buffer)?;
-                            stream.write_all(&buffer)?;
-                        }
-                        #[cfg(not(feature = "gzip"))]
-                        {
-                            let mut buffer = Vec::with_capacity(length as usize);
-                            // read the whole file
-                            f.read_to_end(&mut buffer)?;
-                            stream.write_all(&buffer)?;
+                            #[cfg(feature = "gzip")]
+                            if length > GZIP_LOW_BOUNDARY_THRESHOLD {
+                                let mut buffer = Vec::with_capacity(length as usize);
+                                // read the whole file
+                                f.read_to_end(&mut buffer)?;
+                                let mut compressor = Compressor::new(CompressionLvl::default());
+                                let max_sz = compressor.deflate_compress_bound(buffer.len());
+                                let mut compressed_data = Vec::with_capacity(max_sz);
+                                compressed_data.resize(max_sz, 0);
+                                let actual_sz = compressor
+                                    .gzip_compress(&buffer, &mut compressed_data)
+                                    .map_err(|e| Error::other(format!("can't deflate {e}")))?;
+                                compressed_data.resize(actual_sz, 0);
+                                // add length header now
+                                write!(
+                                    stream,
+                                    "Content-Length: {}\r\n\r\n",
+                                    compressed_data.len()
+                                )?;
+                                stream.write_all(&compressed_data)?;
+                            //debug!("compressed to {actual_sz}")
+                            } else {
+                                let mut buffer = Vec::with_capacity(length as usize);
+                                // read the whole file
+                                f.read_to_end(&mut buffer)?;
+                                stream.write_all(&buffer)?;
+                            }
+                            #[cfg(not(feature = "gzip"))]
+                            {
+                                let mut buffer = Vec::with_capacity(length as usize);
+                                // read the whole file
+                                f.read_to_end(&mut buffer)?;
+                                stream.write_all(&buffer)?;
                             }
                         }
                         // log

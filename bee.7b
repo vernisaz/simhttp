@@ -3,7 +3,7 @@ main=http
 common =..${~/~}simscript${~/~}comm-build.7b:file
 crate_dir=..${~/~}crates
 comp opts=[]
-gzip=!true
+gzip=true
 
 version=1.31
 set_env(VERSION,SimHTTP/${version}b83)
