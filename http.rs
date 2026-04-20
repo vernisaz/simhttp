@@ -83,6 +83,7 @@ const MAX_LINE_LEN: usize = 64 * 1024;
 
 const DUMMY_CHUNK_LEN: usize = 128 * 1024;
 
+#[cfg(feature = "gzip")]
 const GZIP_LOW_BOUNDARY_THRESHOLD: u64 = 256u64;
 
 const PARSE_NUM_ERR: u16 = 501;
