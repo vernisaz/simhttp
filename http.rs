@@ -3,6 +3,8 @@ extern crate simcli;
 extern crate simjson;
 extern crate simtpool;
 extern crate simweb;
+#[cfg(feature = "gzip")]
+extern crate libdeflater;
 use simcli::{CLI, OptTyp, OptVal};
 use simjson::JsonData::{self, Arr, Bool, Data, Num, Text};
 use simtpool::ThreadPool;
@@ -26,6 +28,8 @@ use std::{
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+#[cfg(feature = "gzip")]
+use libdeflater::{Compressor, CompressionLvl};
 mod log;
 use log::{Level, LogFile};
 mod sha1;
@@ -1245,10 +1249,24 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             ""
                         };
                         let time = http_format_time(modified);
+                        #[cfg(feature = "gzip")]
+                        let response = if (*chunk_size == 0 || *chunk_size > length as usize) && length > 200 {
+                            format!(
+                            "{protocol} 200 OK\r\nContent-Encoding: gzip\r\nContent-Type: {c_type}\r\nLast-modified: {time}\r\n{keep_alive}Date: {}\r\nServer: {VERSION}\r\n",
+                            http_format_time(SystemTime::now()),
+                        )
+                        } else {
+                            format!(
+                            "{protocol} 200 OK\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\nLast-modified: {time}\r\n{keep_alive}Date: {}\r\nServer: {VERSION}\r\n\r\n",
+                            http_format_time(SystemTime::now()),
+                        )
+                        };
+                        #[cfg(not(feature = "gzip"))]
                         let response = format!(
                             "{protocol} 200 OK\r\nContent-Length: {length}\r\nContent-Type: {c_type}\r\nLast-modified: {time}\r\n{keep_alive}Date: {}\r\nServer: {VERSION}\r\n\r\n",
                             http_format_time(SystemTime::now()),
                         );
+                        //debug!("response {response} ");
                         stream.write_all(response.as_bytes())?;
 
                         if *chunk_size > 0 && length > *chunk_size as u64 {
@@ -1264,10 +1282,34 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             f.read_exact(remain_buffer)?;
                             stream.write_all(remain_buffer)?;
                         } else {
+                        #[cfg(feature = "gzip")]
+                        if length > 200 {
+                            let mut buffer = Vec::with_capacity(length as usize);
+                            // read the whole file
+                            f.read_to_end(&mut buffer)?;
+                            let mut compressor = Compressor::new(CompressionLvl::default());
+                        let max_sz = compressor.deflate_compress_bound(buffer.len());
+                        let mut compressed_data = Vec::with_capacity(max_sz);
+                        compressed_data.resize(max_sz, 0);
+                        let actual_sz = compressor.gzip_compress(&buffer, &mut compressed_data).map_err(|e| Error::other(format!("can't deflate {e}")))?;
+                        compressed_data.resize(actual_sz, 0);
+                        // add length header now
+                        write!(stream, "Content-Length: {}\r\n\r\n", compressed_data.len())?;
+                        stream.write_all(&compressed_data)?;
+                        //debug!("compressed to {actual_sz}")
+                        } else {
                             let mut buffer = Vec::with_capacity(length as usize);
                             // read the whole file
                             f.read_to_end(&mut buffer)?;
                             stream.write_all(&buffer)?;
+                        }
+                        #[cfg(not(feature = "gzip"))]
+                        {
+                            let mut buffer = Vec::with_capacity(length as usize);
+                            // read the whole file
+                            f.read_to_end(&mut buffer)?;
+                            stream.write_all(&buffer)?;
+                            }
                         }
                         // log
                         LOGGER.lock().unwrap().info(

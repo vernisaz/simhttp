@@ -56,6 +56,10 @@ The following directories structure is expected to build the server
 
 The server is built by executing _rb_ in its repository.
 
+Note that starting from version *1.31*, **Simple HTTP** can support `gzip` transfer encodig. 
+You need to checkout 3rd party repositories, and build the compressor crate as described [here](https://github.com/vernisaz/simple_rust_zip#building-the-crate).
+And then set `gzip` variable of [bee.7b](./bee.7b) to `true`, when build the server.
+
 ## Configuring
 One JSON file is used for configuring the server. The file has to be in the current working directory the server ran from.
 An example of [env.conf](https://github.com/vernisaz/simhttp/blob/master/env.conf) file is a self describing. Specify a current
@@ -156,4 +160,4 @@ I couldn't do without _SimHTTP_. SimHTTP is decoupled from deployed Rust applica
 of the server and even dynamically.
 
 ## Status
-Current version is SimHTTP/1.30b82. It's a beta version.
+Current version is SimHTTP/1.31b83. It's a beta version.

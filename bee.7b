@@ -3,9 +3,10 @@ main=http
 common =..${~/~}simscript${~/~}comm-build.7b:file
 crate_dir=..${~/~}crates
 comp opts=[]
+gzip=!true
 
-version=1.30
-set_env(VERSION,SimHTTP/${version}b82)
+version=1.31
+set_env(VERSION,SimHTTP/${version}b83)
 
 if {
 	eq(${~os~},windows)
@@ -39,6 +40,14 @@ if {
 	neq(cfg,"cfg") then {
 		array(comp opts, --cfg,cfg)
 		assign(comp opts, ~~)
+	}
+}
+
+if {
+	eq(gzip,true)
+	then {
+		array(comp opts, --cfg, feature="gzip")
+		assign(comp opts,~~)
 	}
 }
 
