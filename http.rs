@@ -295,9 +295,9 @@ fn main() -> Result<(), Box<dyn GenError>> {
         //let res_stream = stream.try_clone().unwrap();
         tp.execute(move || {
             let mut reuse_counter = 0;
-            let mut close_connection = false;
+            let (keep_alive_secs, max_connections) = *KEEPALIVE.get().unwrap();
+            let mut close_connection = keep_alive_secs > 0;
             while !close_connection {
-                let (keep_alive_secs, max_connections) = *KEEPALIVE.get().unwrap();
                 if keep_alive_secs > 0 {
                     let _ =
                         stream.set_read_timeout(Some(Duration::from_secs(keep_alive_secs.into())));
@@ -322,7 +322,7 @@ fn main() -> Result<(), Box<dyn GenError>> {
                         break;
                     }
                     _ => {
-                        if stop_two.load(Ordering::SeqCst) || KEEPALIVE.get().unwrap().0 == 0 {
+                        if stop_two.load(Ordering::SeqCst) || close_connection {
                             let _ = stream.shutdown(Shutdown::Both);
                             break;
                         }
