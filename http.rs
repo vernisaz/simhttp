@@ -503,6 +503,8 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
     let mut content_len = 0_u64;
     let mut since = 0_u64;
     let mut extra = BufType::None;
+    #[cfg(feature = "gzip")]
+    let mut gzip_allowed = false;
     let mut cgi_env = if cgi {
         let mut env: HashMap<String, String> = if preserve_env {
             env::vars().collect()
@@ -606,6 +608,10 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             "HTTP_".to_owned() + &key.to_uppercase().replace("-", "_").to_string(),
                             val.to_string(),
                         );
+                        #[cfg(feature = "gzip")]
+                        if key == "accept-encoding" {
+                            gzip_allowed = val.contains("gzip");
+                        }
                     }
                 }
             } else {
@@ -1256,9 +1262,11 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         };
                         let time = http_format_time(modified);
                         #[cfg(feature = "gzip")]
-                        let response = if (*chunk_size == 0 || *chunk_size > length as usize)
+                        let response = if gzip_allowed
+                            && (*chunk_size == 0 || *chunk_size > length as usize)
                             && length > GZIP_LOW_BOUNDARY_THRESHOLD
-                        { // Note that headers are not finished here, because content length will be calculated after compression
+                        {
+                            // Note that headers are not finished here, because content length will be calculated after compression
                             format!(
                                 "{protocol} 200 OK\r\nContent-Encoding: gzip\r\nContent-Type: {c_type}\r\nLast-modified: {time}\r\n{keep_alive}Date: {}\r\nServer: {VERSION}\r\n",
                                 http_format_time(SystemTime::now()),
@@ -1291,7 +1299,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                             stream.write_all(remain_buffer)?;
                         } else {
                             #[cfg(feature = "gzip")]
-                            if length > GZIP_LOW_BOUNDARY_THRESHOLD {
+                            if gzip_allowed && length > GZIP_LOW_BOUNDARY_THRESHOLD {
                                 let mut buffer = Vec::with_capacity(length as usize);
                                 // read the whole file
                                 f.read_to_end(&mut buffer)?;
