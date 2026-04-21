@@ -295,14 +295,19 @@ fn main() -> Result<(), Box<dyn GenError>> {
         //let res_stream = stream.try_clone().unwrap();
         tp.execute(move || {
             let mut reuse_counter = 0;
-            loop {
+            let mut close_connection = false;
+            while !close_connection {
                 let (keep_alive_secs, max_connections) = *KEEPALIVE.get().unwrap();
                 if keep_alive_secs > 0 {
                     let _ =
                         stream.set_read_timeout(Some(Duration::from_secs(keep_alive_secs.into())));
                 }
+                reuse_counter += 1;
+                if max_connections > 0 && max_connections < reuse_counter {
+                    close_connection = true;
+                }
                 // timeout can be reset at handling long polls
-                match handle_connection(&stream) {
+                match handle_connection(&stream, close_connection) {
                     Err(err) => {
                         if err.kind() != ErrorKind::BrokenPipe
                             && err.kind() != ErrorKind::ConnectionReset
@@ -321,10 +326,6 @@ fn main() -> Result<(), Box<dyn GenError>> {
                             let _ = stream.shutdown(Shutdown::Both);
                             break;
                         }
-                        reuse_counter += 1;
-                        if max_connections > 0 && max_connections < reuse_counter {
-                            break;
-                        }
                     }
                 }
             }
@@ -339,7 +340,7 @@ fn main() -> Result<(), Box<dyn GenError>> {
     Ok(())
 }
 
-fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
+fn handle_connection(mut stream: &TcpStream, close_connection: bool) -> io::Result<()> {
     let addr = match stream.peer_addr() {
         Ok(addr) => addr.to_string(),
         _ => "disconnected".to_string(),
@@ -1126,7 +1127,11 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 } else {
                                     "".to_string()
                                 };
-                                headers.push_str(&format!("Connection: Keep-Alive\r\nKeep-Alive: timeout={keep_alive_time}{max_str}\r\n"))
+                                if close_connection {
+                                    headers.push_str("Connection: close");
+                                } else {
+                                    headers.push_str(&format!("Connection: Keep-Alive\r\nKeep-Alive: timeout={keep_alive_time}{max_str}\r\n"))
+                                }
                             };
                             //eprintln!("headers - {headers}");
                             out_stream.write_all(headers.as_bytes())?;
@@ -1248,7 +1253,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                         report_error(500, &request_line, stream)?
                     } else {
                         let (keep_alive_time, max) = *KEEPALIVE.get().unwrap();
-                        let keep_alive = if keep_alive_time > 0 {
+                        let keep_alive = if !close_connection  && keep_alive_time > 0 {
                             let max_str = if max > 0 {
                                 format!(", max={max}")
                             } else {
@@ -1258,7 +1263,7 @@ fn handle_connection(mut stream: &TcpStream) -> io::Result<()> {
                                 "Connection: Keep-Alive\r\nKeep-Alive: timeout={keep_alive_time}{max_str}\r\n"
                             )
                         } else {
-                            ""
+                            "Connection: close"
                         };
                         let time = http_format_time(modified);
                         #[cfg(feature = "gzip")]
