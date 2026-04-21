@@ -672,6 +672,10 @@ fn handle_connection(mut stream: &TcpStream, close_connection: bool) -> io::Resu
                     "referer" | "user-agent" => {
                         LOGGER.lock().unwrap().trace(&format!("{key}: {val}"))
                     }
+                    #[cfg(feature = "gzip")]
+                    "accept-encoding" => {
+                        gzip_allowed = val.contains("gzip");
+                    }
                     &_ => (), // all headers should be collected somewhere
                 }
             }
@@ -1139,7 +1143,7 @@ fn handle_connection(mut stream: &TcpStream, close_connection: bool) -> io::Resu
                             // read until chunk size
                             let (_, resp_size, chunk_size) = SIZING_CONSTRAINS.get().unwrap();
                             // TODO chunked can be also gzip
-                            if *chunk_size > 0 {
+                            if *chunk_size > 0 { // TODO apply chunked, gzip
                                 out_stream
                                     .write_all("Transfer-Encoding: chunked\r\n\r\n".as_bytes())?;
                                 let mut buffer = vec![0_u8; *chunk_size];
@@ -1163,7 +1167,7 @@ fn handle_connection(mut stream: &TcpStream, close_connection: bool) -> io::Resu
                                 // there is a possibilty to push out extra headers
                                 written += 5;
                                 out_stream.flush()?
-                            } else {
+                            } else { // TODO apply gzip
                                 let mut buffer = Vec::with_capacity(DUMMY_CHUNK_LEN);
                                 buf_reader.read_to_end(&mut buffer)?;
                                 written = buffer.len() as u64; // why not content-length ?
