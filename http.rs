@@ -1143,7 +1143,8 @@ fn handle_connection(mut stream: &TcpStream, close_connection: bool) -> io::Resu
                             // read until chunk size
                             let (_, resp_size, chunk_size) = SIZING_CONSTRAINS.get().unwrap();
                             // TODO chunked can be also gzip
-                            if *chunk_size > 0 { // TODO apply chunked, gzip
+                            if *chunk_size > 0 {
+                                // TODO apply chunked, gzip
                                 out_stream
                                     .write_all("Transfer-Encoding: chunked\r\n\r\n".as_bytes())?;
                                 let mut buffer = vec![0_u8; *chunk_size];
@@ -1167,7 +1168,8 @@ fn handle_connection(mut stream: &TcpStream, close_connection: bool) -> io::Resu
                                 // there is a possibilty to push out extra headers
                                 written += 5;
                                 out_stream.flush()?
-                            } else { // TODO apply gzip
+                            } else {
+                                // TODO apply gzip
                                 let mut buffer = Vec::with_capacity(DUMMY_CHUNK_LEN);
                                 buf_reader.read_to_end(&mut buffer)?;
                                 written = buffer.len() as u64; // why not content-length ?
@@ -1258,7 +1260,7 @@ fn handle_connection(mut stream: &TcpStream, close_connection: bool) -> io::Resu
                         report_error(500, &request_line, stream)?
                     } else {
                         let (keep_alive_time, max) = *KEEPALIVE.get().unwrap();
-                        let keep_alive = if !close_connection  && keep_alive_time > 0 {
+                        let keep_alive = if !close_connection && keep_alive_time > 0 {
                             let max_str = if max > 0 {
                                 format!(", max={max}")
                             } else {
@@ -1315,8 +1317,7 @@ fn handle_connection(mut stream: &TcpStream, close_connection: bool) -> io::Resu
                                 f.read_to_end(&mut buffer)?;
                                 let mut compressor = Compressor::new(CompressionLvl::default());
                                 let max_sz = compressor.deflate_compress_bound(buffer.len());
-                                let mut compressed_data = Vec::with_capacity(max_sz);
-                                compressed_data.resize(max_sz, 0);
+                                let mut compressed_data = vec![0; max_sz];
                                 let actual_sz = compressor
                                     .gzip_compress(&buffer, &mut compressed_data)
                                     .map_err(|e| Error::other(format!("can't deflate {e}")))?;
