@@ -1142,61 +1142,108 @@ fn handle_connection(mut stream: &TcpStream, close_connection: bool) -> io::Resu
                             let mut written = 0;
                             // read until chunk size
                             let (_, resp_size, chunk_size) = SIZING_CONSTRAINS.get().unwrap();
-                            // TODO chunked can be also gzip
-                            if *chunk_size > 0 {
-                                let mut buffer = vec![0_u8; *chunk_size];
-                                write!(out_stream, "Transfer-Encoding: chunked\r\n\r\n")?;
-                                // chunked gzip isn't supported
-                                // however, can check if no more chunks after first, its content can be compresssed 
-                                // and one chunk can be gzip, chunked
-                                while let Ok(len) = buf_reader.read(&mut buffer)
-                                    && len > 0
-                                {
-                                    if *resp_size > 0 && *resp_size < written {
-                                        continue; // max len reached
+                            'chunked: {
+                                if *chunk_size > 0 {
+                                    let mut buffer = vec![0_u8; *chunk_size];
+                                    // use flate2 for streaming/chunked big files
+                                    let mut len = 0;
+                                    let mut backup_buffer = vec![];
+                                    #[cfg(feature = "gzip")]
+                                    if gzip_allowed {
+                                        len = buf_reader.read(&mut buffer)?;
+                                        if len as u64 > GZIP_LOW_BOUNDARY_THRESHOLD {
+                                            // worth to try gzip
+                                            backup_buffer = buffer[..len].to_vec();
+                                            len = buf_reader.read(&mut buffer)?;
+                                            if len == 0 {
+                                                write!(
+                                                    out_stream,
+                                                    "Transfer-Encoding: gzip, chunked\r\n\r\n"
+                                                )?;
+                                                let mut compressor =
+                                                    Compressor::new(CompressionLvl::default());
+                                                let max_sz =
+                                                    compressor.deflate_compress_bound(backup_buffer.len());
+                                                let mut compressed_data = vec![0; max_sz];
+                                                let actual_sz = compressor
+                                                    .gzip_compress(&backup_buffer, &mut compressed_data)
+                                                    .map_err(|e| {
+                                                        Error::other(format!("can't gzip {e}"))
+                                                    })?;
+                                                compressed_data.resize(actual_sz, 0);
+                                                write!(out_stream, "{len:x}\r\n")?;
+                                                out_stream.write_all(&compressed_data)?;
+                                                write!(out_stream, "\r\n0\r\n\r\n")?;
+                                                break 'chunked;
+                                            }
+                                        }
                                     }
-                                    write!(out_stream, "{len:x}\r\n")?;
-                                    out_stream.write_all(&buffer[..len])?;
-                                    write!(out_stream, "\r\n")?;
-                                }
-                                write!(out_stream, "0\r\n\r\n")?;
-                                // there is a possibilty to push out extra headers
-                                out_stream.flush()?
-                            } else {
-                                let mut buffer = Vec::with_capacity(DUMMY_CHUNK_LEN);
-                                buf_reader.read_to_end(&mut buffer)?;
-                                written = buffer.len() as u64; // why not content-length ?
-                                #[cfg(feature = "gzip")]
-                                if gzip_allowed && written > GZIP_LOW_BOUNDARY_THRESHOLD {
-                                    let mut compressor = Compressor::new(CompressionLvl::default());
-                                    let max_sz = compressor.deflate_compress_bound(buffer.len());
-                                    let mut compressed_data = vec![0; max_sz];
-                                    let actual_sz = compressor
-                                        .gzip_compress(&buffer, &mut compressed_data)
-                                        .map_err(|e| Error::other(format!("can't gzip {e}")))?;
-                                    compressed_data.resize(actual_sz, 0);
-                                    write!(
-                                        out_stream,
-                                        "Content-Encoding: gzip\r\nContent-Length: {actual_sz}\r\n\r\n"
-                                    )?;
-                                    out_stream.write_all(&compressed_data)?;
+                                    write!(out_stream, "Transfer-Encoding: chunked\r\n\r\n")?;
+                                    // write chunk backup_buffer
+                                    if !backup_buffer.is_empty() {
+                                        write!(out_stream, "{:x}\r\n", backup_buffer.len())?;
+                                        out_stream.write_all(&backup_buffer)?;
+                                        write!(out_stream, "\r\n")?;
+                                    }
+                                    if len > 0 {
+                                        write!(out_stream, "{len:x}\r\n")?;
+                                        out_stream.write_all(&buffer[..len])?;
+                                        write!(out_stream, "\r\n")?;
+                                    }
+
+                                    while let Ok(len) = buf_reader.read(&mut buffer)
+                                        && len > 0
+                                    {
+                                        if *resp_size > 0 && *resp_size < written {
+                                            continue; // max len reached
+                                        }
+                                        write!(out_stream, "{len:x}\r\n")?;
+                                        out_stream.write_all(&buffer[..len])?;
+                                        write!(out_stream, "\r\n")?;
+                                    }
+                                    write!(out_stream, "0\r\n\r\n")?;
+                                    // there is a possibilty to push out extra headers
+                                    out_stream.flush()?
                                 } else {
-                                    out_stream.write_all(
-                                        format! {"Content-Length: {written}\r\n\r\n"}.as_bytes(),
-                                    )?;
-                                    if written > 0 {
-                                        out_stream.write_all(&buffer)?;
-                                        out_stream.flush()?;
+                                    let mut buffer = Vec::with_capacity(DUMMY_CHUNK_LEN);
+                                    buf_reader.read_to_end(&mut buffer)?;
+                                    written = buffer.len() as u64; // why not content-length ?
+                                    #[cfg(feature = "gzip")]
+                                    if gzip_allowed && written > GZIP_LOW_BOUNDARY_THRESHOLD {
+                                        let mut compressor =
+                                            Compressor::new(CompressionLvl::default());
+                                        let max_sz =
+                                            compressor.deflate_compress_bound(buffer.len());
+                                        let mut compressed_data = vec![0; max_sz];
+                                        let actual_sz = compressor
+                                            .gzip_compress(&buffer, &mut compressed_data)
+                                            .map_err(|e| Error::other(format!("can't gzip {e}")))?;
+                                        compressed_data.resize(actual_sz, 0);
+                                        write!(
+                                            out_stream,
+                                            "Content-Encoding: gzip\r\nContent-Length: {actual_sz}\r\n\r\n"
+                                        )?;
+                                        out_stream.write_all(&compressed_data)?;
+                                    } else {
+                                        out_stream.write_all(
+                                            format! {"Content-Length: {written}\r\n\r\n"}
+                                                .as_bytes(),
+                                        )?;
+                                        if written > 0 {
+                                            out_stream.write_all(&buffer)?;
+                                            out_stream.flush()?;
+                                        }
                                     }
-                                }
-                                #[cfg(not(feature = "gzip"))]
-                                {
-                                    out_stream.write_all(
-                                        format! {"Content-Length: {written}\r\n\r\n"}.as_bytes(),
-                                    )?;
-                                    if written > 0 {
-                                        out_stream.write_all(&buffer)?;
-                                        out_stream.flush()?;
+                                    #[cfg(not(feature = "gzip"))]
+                                    {
+                                        out_stream.write_all(
+                                            format! {"Content-Length: {written}\r\n\r\n"}
+                                                .as_bytes(),
+                                        )?;
+                                        if written > 0 {
+                                            out_stream.write_all(&buffer)?;
+                                            out_stream.flush()?;
+                                        }
                                     }
                                 }
                             }
