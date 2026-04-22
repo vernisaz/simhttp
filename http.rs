@@ -1147,7 +1147,9 @@ fn handle_connection(mut stream: &TcpStream, close_connection: bool) -> io::Resu
                                 let mut buffer = vec![0_u8; *chunk_size];
                                 write!(out_stream, "Transfer-Encoding: chunked\r\n\r\n")?;
                                 // chunked gzip isn't supported
-                                    while let Ok(len) = buf_reader.read(&mut buffer)
+                                // however, can check if no more chunks after first, its content can be compresssed 
+                                // and one chunk can be gzip, chunked
+                                while let Ok(len) = buf_reader.read(&mut buffer)
                                     && len > 0
                                 {
                                     if *resp_size > 0 && *resp_size < written {
@@ -1156,8 +1158,8 @@ fn handle_connection(mut stream: &TcpStream, close_connection: bool) -> io::Resu
                                     write!(out_stream, "{len:x}\r\n")?;
                                     out_stream.write_all(&buffer[..len])?;
                                     write!(out_stream, "\r\n")?;
-                                    }
-                                    write!(out_stream, "0\r\n\r\n")?;
+                                }
+                                write!(out_stream, "0\r\n\r\n")?;
                                 // there is a possibilty to push out extra headers
                                 out_stream.flush()?
                             } else {
@@ -1165,39 +1167,39 @@ fn handle_connection(mut stream: &TcpStream, close_connection: bool) -> io::Resu
                                 buf_reader.read_to_end(&mut buffer)?;
                                 written = buffer.len() as u64; // why not content-length ?
                                 #[cfg(feature = "gzip")]
-                            if gzip_allowed && written > GZIP_LOW_BOUNDARY_THRESHOLD {
-                                let mut compressor = Compressor::new(CompressionLvl::default());
-                                let max_sz = compressor.deflate_compress_bound(buffer.len());
-                                let mut compressed_data = vec![0; max_sz];
-                                let actual_sz = compressor
-                                    .gzip_compress(&buffer, &mut compressed_data)
-                                    .map_err(|e| Error::other(format!("can't gzip {e}")))?;
-                                compressed_data.resize(actual_sz, 0);
-                                write!(
-                                    out_stream,
-                                    "Content-Encoding: gzip\r\nContent-Length: {actual_sz}\r\n\r\n"
-                                )?;
-                                out_stream.write_all(&compressed_data)?;
-                            } else {
-                                out_stream.write_all(
-                                    format! {"Content-Length: {written}\r\n\r\n"}.as_bytes(),
-                                )?;
-                                if written > 0 {
-                                    out_stream.write_all(&buffer)?;
-                                    out_stream.flush()?;
+                                if gzip_allowed && written > GZIP_LOW_BOUNDARY_THRESHOLD {
+                                    let mut compressor = Compressor::new(CompressionLvl::default());
+                                    let max_sz = compressor.deflate_compress_bound(buffer.len());
+                                    let mut compressed_data = vec![0; max_sz];
+                                    let actual_sz = compressor
+                                        .gzip_compress(&buffer, &mut compressed_data)
+                                        .map_err(|e| Error::other(format!("can't gzip {e}")))?;
+                                    compressed_data.resize(actual_sz, 0);
+                                    write!(
+                                        out_stream,
+                                        "Content-Encoding: gzip\r\nContent-Length: {actual_sz}\r\n\r\n"
+                                    )?;
+                                    out_stream.write_all(&compressed_data)?;
+                                } else {
+                                    out_stream.write_all(
+                                        format! {"Content-Length: {written}\r\n\r\n"}.as_bytes(),
+                                    )?;
+                                    if written > 0 {
+                                        out_stream.write_all(&buffer)?;
+                                        out_stream.flush()?;
+                                    }
+                                }
+                                #[cfg(not(feature = "gzip"))]
+                                {
+                                    out_stream.write_all(
+                                        format! {"Content-Length: {written}\r\n\r\n"}.as_bytes(),
+                                    )?;
+                                    if written > 0 {
+                                        out_stream.write_all(&buffer)?;
+                                        out_stream.flush()?;
+                                    }
                                 }
                             }
-                            #[cfg(not(feature = "gzip"))]
-                            {
-                                out_stream.write_all(
-                                    format! {"Content-Length: {written}\r\n\r\n"}.as_bytes(),
-                                )?;
-                                if written > 0 {
-                                    out_stream.write_all(&buffer)?;
-                                    out_stream.flush()?;
-                                }
-                            }
-}
                             Ok(LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" {code_num} {}",
                        SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis(), written}))
                         };
