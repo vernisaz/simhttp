@@ -84,7 +84,7 @@ const MAX_LINE_LEN: usize = 64 * 1024;
 const DUMMY_CHUNK_LEN: usize = 128 * 1024;
 
 #[cfg(feature = "gzip")]
-const GZIP_LOW_BOUNDARY_THRESHOLD: u64 = 256u64;
+const GZIP_LOW_BOUNDARY_THRESHOLD: u64 = 256;
 
 const PARSE_NUM_ERR: u16 = 501;
 
@@ -1144,37 +1144,41 @@ fn handle_connection(mut stream: &TcpStream, close_connection: bool) -> io::Resu
                             let (_, resp_size, chunk_size) = SIZING_CONSTRAINS.get().unwrap();
                             // TODO chunked can be also gzip
                             if *chunk_size > 0 {
-                                // TODO apply chunked, gzip
-                                out_stream
-                                    .write_all("Transfer-Encoding: chunked\r\n\r\n".as_bytes())?;
                                 let mut buffer = vec![0_u8; *chunk_size];
-                                while let Ok(len) = buf_reader.read(&mut buffer)
+                                write!(out_stream, "Transfer-Encoding: chunked\r\n\r\n")?;
+                                // chunked gzip isn't supported
+                                    while let Ok(len) = buf_reader.read(&mut buffer)
                                     && len > 0
                                 {
                                     if *resp_size > 0 && *resp_size < written {
                                         continue; // max len reached
                                     }
-                                    let len_mark = format!("{len:x}\r\n");
-                                    //eprintln!("chunk: {len_mark}");
-                                    out_stream.write_all(len_mark.as_bytes())?;
-                                    written += len_mark.len() as u64;
+                                    write!(out_stream, "{len:x}\r\n")?;
                                     out_stream.write_all(&buffer[..len])?;
-                                    written += len as u64;
-                                    out_stream.write_all("\r\n".as_bytes())?;
-                                    // there is a possibilty to push out extra headers
-                                    written += 2;
-                                }
-                                out_stream.write_all("0\r\n\r\n".as_bytes())?;
+                                    write!(out_stream, "\r\n")?;
+                                    }
+                                    write!(out_stream, "0\r\n\r\n")?;
                                 // there is a possibilty to push out extra headers
-                                written += 5;
                                 out_stream.flush()?
                             } else {
-                                // TODO apply gzip
                                 let mut buffer = Vec::with_capacity(DUMMY_CHUNK_LEN);
                                 buf_reader.read_to_end(&mut buffer)?;
                                 written = buffer.len() as u64; // why not content-length ?
-                                //eprintln!{"{status}{headers}Content-Length: {written}"}
-                                //eprintln!("body - {:?}", String::from_utf8(buffer.to_vec()));
+                                #[cfg(feature = "gzip")]
+                            if gzip_allowed && written > GZIP_LOW_BOUNDARY_THRESHOLD {
+                                let mut compressor = Compressor::new(CompressionLvl::default());
+                                let max_sz = compressor.deflate_compress_bound(buffer.len());
+                                let mut compressed_data = vec![0; max_sz];
+                                let actual_sz = compressor
+                                    .gzip_compress(&buffer, &mut compressed_data)
+                                    .map_err(|e| Error::other(format!("can't gzip {e}")))?;
+                                compressed_data.resize(actual_sz, 0);
+                                write!(
+                                    out_stream,
+                                    "Content-Encoding: gzip\r\nContent-Length: {actual_sz}\r\n\r\n"
+                                )?;
+                                out_stream.write_all(&compressed_data)?;
+                            } else {
                                 out_stream.write_all(
                                     format! {"Content-Length: {written}\r\n\r\n"}.as_bytes(),
                                 )?;
@@ -1183,7 +1187,17 @@ fn handle_connection(mut stream: &TcpStream, close_connection: bool) -> io::Resu
                                     out_stream.flush()?;
                                 }
                             }
-
+                            #[cfg(not(feature = "gzip"))]
+                            {
+                                out_stream.write_all(
+                                    format! {"Content-Length: {written}\r\n\r\n"}.as_bytes(),
+                                )?;
+                                if written > 0 {
+                                    out_stream.write_all(&buffer)?;
+                                    out_stream.flush()?;
+                                }
+                            }
+}
                             Ok(LOGGER.lock().unwrap().info(&format!{"{addr} -- [{:>10}] \"{request_line}\" {code_num} {}",
                        SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis(), written}))
                         };
@@ -1320,7 +1334,7 @@ fn handle_connection(mut stream: &TcpStream, close_connection: bool) -> io::Resu
                                 let mut compressed_data = vec![0; max_sz];
                                 let actual_sz = compressor
                                     .gzip_compress(&buffer, &mut compressed_data)
-                                    .map_err(|e| Error::other(format!("can't deflate {e}")))?;
+                                    .map_err(|e| Error::other(format!("can't gzip {e}")))?;
                                 compressed_data.resize(actual_sz, 0);
                                 // add length header now
                                 write!(
