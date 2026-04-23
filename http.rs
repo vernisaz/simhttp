@@ -313,11 +313,12 @@ fn main() -> Result<(), Box<dyn GenError>> {
                     Err(err) => {
                         if err.kind() != ErrorKind::BrokenPipe
                             && err.kind() != ErrorKind::ConnectionReset
+                            && err.kind() != ErrorKind::WouldBlock
                         {
                             LOGGER
                                 .lock()
                                 .unwrap()
-                                .error(&format! {"Err: {err}/{} - in handling the request (can be read timeout)", err.kind()});
+                                .error(&format! {"Err: {err}/{} - in handling the request", err.kind()});
                             // can do it only if response isn't commited
                             let _ = report_error(500, "<grabbled> HTTP/1.1", &stream);
                         }
