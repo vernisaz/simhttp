@@ -317,7 +317,7 @@ fn main() -> Result<(), Box<dyn GenError>> {
                             LOGGER
                                 .lock()
                                 .unwrap()
-                                .error(&format! {"Err: {err} - in handling the request"});
+                                .error(&format! {"Err: {err}/{} - in handling the request (can be read timeout)", err.kind()});
                             // can do it only if response isn't commited
                             let _ = report_error(500, "<grabbled> HTTP/1.1", &stream);
                         }
@@ -361,7 +361,10 @@ fn handle_connection(mut stream: &TcpStream, close_connection: bool) -> io::Resu
         }
         return Err(Error::new(ErrorKind::BrokenPipe, "no data"));
     }
-    //eprintln!("request {line}");
+    LOGGER
+                .lock()
+                .unwrap()
+                .error(&format!("request {line}"));
     let mut close = false;
     line.truncate(len - 2); // \r\n
     let request_line = line.clone();
