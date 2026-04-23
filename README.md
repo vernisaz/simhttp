@@ -56,7 +56,8 @@ The following directories structure is expected to build the server
 
 The server is built by executing _rb_ in its repository.
 
-Note that starting from version *1.31*, **Simple HTTP** can support `gzip` transfer encodig. 
+**Note** that starting from version *1.31*, **Simple HTTP** can support `gzip` content encodig. It can be used with `chunked`
+transfer encoding.
 You need to checkout 3rd party repositories, and build the compressor crate as described [here](https://github.com/vernisaz/simple_rust_zip#building-the-crate).
 And then set `gzip` variable of [bee.7b](./bee.7b) to `true`, when build the server.
 
@@ -87,7 +88,8 @@ It gives also benefits to run the server from a regular user account.
 The limitation of not supporting SSL/TLS can be reconsidered in the future.
 
 ## Running
-Just launch **simhttp**. Press 'q' for stop. (See a note in the [issues](https://github.com/vernisaz/simhttp/blob/master/issues.md))
+Just launch **simhttp**. If `no terminal` set to `true', then press 'q' for stop. (See a note in the [issues](https://github.com/vernisaz/simhttp/blob/master/issues.md).)
+Use 'kill' to stop the server in all other cases.
 
 If you run _simhttp_ in a *SSH* session and want to keep it running after the session gets closed, then use -
 `"no terminal": true` property in the configuration file and launch it with ending `&`. The server will be less verbose in the case.
@@ -160,4 +162,4 @@ I couldn't do without _SimHTTP_. SimHTTP is decoupled from deployed Rust applica
 of the server and even dynamically.
 
 ## Status
-Current version is SimHTTP/1.31b83. It's a beta version.
+Current version is SimHTTP/1.31b84. It's a beta version.
