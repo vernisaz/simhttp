@@ -315,10 +315,9 @@ fn main() -> Result<(), Box<dyn GenError>> {
                             && err.kind() != ErrorKind::ConnectionReset
                             && err.kind() != ErrorKind::WouldBlock
                         {
-                            LOGGER
-                                .lock()
-                                .unwrap()
-                                .error(&format! {"Err: {err}/{} - in handling the request", err.kind()});
+                            LOGGER.lock().unwrap().error(
+                                &format! {"Err: {err}/{} - in handling the request", err.kind()},
+                            );
                             // can do it only if response isn't commited
                             let _ = report_error(500, "<grabbled> HTTP/1.1", &stream);
                         }
@@ -1143,12 +1142,17 @@ fn handle_connection(mut stream: &TcpStream, close_connection: bool) -> io::Resu
                             let mut written = 0;
                             // read until chunk size
                             let (_, resp_size, chunk_size) = SIZING_CONSTRAINS.get().unwrap();
+                            #[allow(unused_labels)]
                             'chunked: {
                                 if *chunk_size > 0 {
                                     let mut buffer = vec![0_u8; *chunk_size];
                                     // use flate2 for streaming/chunked big files
+                                    #[cfg(feature = "gzip")]
                                     let mut len = 0;
+                                    #[cfg(feature = "gzip")]
                                     let mut backup_buffer = vec![];
+                                    #[cfg(not(feature = "gzip"))]
+                                    let backup_buffer = vec![];
                                     #[cfg(feature = "gzip")]
                                     if gzip_allowed {
                                         len = buf_reader.read(&mut buffer)?;
