@@ -361,10 +361,7 @@ fn handle_connection(mut stream: &TcpStream, close_connection: bool) -> io::Resu
         }
         return Err(Error::new(ErrorKind::BrokenPipe, "no data"));
     }
-    LOGGER
-                .lock()
-                .unwrap()
-                .error(&format!("request {line}"));
+    //LOGGER.lock().unwrap().trace(&format!("request {line}"));
     let mut close = false;
     line.truncate(len - 2); // \r\n
     let request_line = line.clone();
