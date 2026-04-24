@@ -1343,7 +1343,7 @@ fn handle_connection(mut stream: &TcpStream, close_connection: bool) -> io::Resu
                                 "Connection: Keep-Alive\r\nKeep-Alive: timeout={keep_alive_time}{max_str}\r\n"
                             )
                         } else {
-                            "Connection: close"
+                            "Connection: close\r\n"
                         };
                         let time = http_format_time(modified);
                         #[cfg(feature = "gzip")]
