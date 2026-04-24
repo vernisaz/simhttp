@@ -6,7 +6,7 @@ comp opts=[]
 gzip=true
 
 version=1.31
-set_env(VERSION,SimHTTP/${version}b84)
+set_env(VERSION,SimHTTP/${version}b85)
 
 if {
 	eq(${~os~},windows)
