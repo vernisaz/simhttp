@@ -20,7 +20,7 @@ The server is perfectly suitable for an embedded development. You can deploy it 
 developed in C, Swift, Rust, PHP and so on.
 
 ## Building
-A [RustBee](https://github.com/vernisaz/rust_bee) script file is provided to build the server. There are 4 dependencies from the
+A [RustBee](https://github.com/vernisaz/rust_bee) script file is provided to build the server. There are 5 dependencies from the
 micro libraries (crate) pool. The repositories should be cloned and corresponding
 crates built first.
 
@@ -57,9 +57,9 @@ The following directories structure is expected to build the server
 The server is built by executing _rb_ in its repository.
 
 **Note** that starting from version *1.31*, **Simple HTTP** can support `gzip` content encodig. It can be used with `chunked`
-transfer encoding.
+transfer encoding when it has one chunk.
 You need to checkout 3rd party repositories, and build the compressor crate as described [here](https://github.com/vernisaz/simple_rust_zip#building-the-crate).
-And then set `gzip` variable of [bee.7b](./bee.7b) to `true`, when build the server.
+And then set `gzip` variable of [bee.7b](./bee.7b) to `true`, when build the server. (default value)
 
 ## Configuring
 One JSON file is used for configuring the server. The file has to be in the current working directory the server ran from.
