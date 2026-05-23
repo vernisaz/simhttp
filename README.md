@@ -58,8 +58,9 @@ The server is built by executing _rb_ in its repository.
 
 **Note** that starting from version *1.31*, **Simple HTTP** can support `gzip` content encodig. It can be used with `chunked`
 transfer encoding when it has one chunk.
-You need to checkout 3rd party repositories, and build the compressor crate as described [here](https://github.com/vernisaz/simple_rust_zip#building-the-crate).
-And then set `gzip` variable of [bee.7b](./bee.7b) to `true`, when build the server. (default value)
+You need to checkout 3rd party repositories, and build the compressor crate as described
+[here](https://github.com/vernisaz/simple_rust_zip/blob/master/libdeflate/bee.7b).
+And then set `gzip` variable of [bee.7b](./bee.7b) to `true` (default value), when build the server.
 
 ## Configuring
 One JSON file is used for configuring the server. The file has to be in the current working directory the server ran from.
