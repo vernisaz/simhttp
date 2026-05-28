@@ -50,17 +50,22 @@ The following directories structure is expected to build the server
 │   ├─simweb
 │   ├─simcli
 │   ├─simtime
+│   ├─side┐ (optional)
+│      ┌──┘
+│      ├─libdeflate
+│      ├─libdeflater
 │   .....
 ....
 ```
 
 The server is built by executing _rb_ in its repository.
 
-**Note** that starting from version *1.31*, **Simple HTTP** can support `gzip` content encodig. It can be used with `chunked`
+**Note** that starting from version *1.31*, **Simple HTTP** can support `gzip` content encodig. It can be also used with `chunked`
 transfer encoding when it has one chunk.
-You need to checkout 3rd party repositories, and build the compressor crate as described
+You need to checkout 3rd party repositories for the feature, and build the compressor crate as described
 [here](https://github.com/vernisaz/simple_rust_zip/blob/master/libdeflate/bee.7b).
-And then set `gzip` variable of [bee.7b](./bee.7b) to `true` (default value), when build the server.
+And then set `gzip` variable of [bee.7b](./bee.7b) to `true` (default value), when build the server. Note that *libdeflate*
+is actively developed repository including new processors update, so you may periodically check it out and re-build.
 
 ## Configuring
 One JSON file is used for configuring the server. The file has to be in the current working directory the server ran from.
@@ -163,4 +168,4 @@ I couldn't do without _SimHTTP_. SimHTTP is decoupled from deployed Rust applica
 of the server and even dynamically.
 
 ## Status
-Current version is SimHTTP/1.31b84. It's a beta version.
+Current version is SimHTTP/1.31b85. It's a beta version.
