@@ -128,7 +128,7 @@ fn init_sizing_constrains(mut req_kilo: u64, mut resp_kilo: u64, chunk_kilo: usi
 fn main() -> Result<(), Box<dyn GenError>> {
     let mut cli = CLI::new();
     cli.opt("v", OptTyp::None)?.description("get the version");
-    if cli.get_opt("v") == Some(&OptVal::Empty) {
+    if cli.get_opt("v")? == Some(&OptVal::Empty) {
         return Ok(println!("SimpleHTTP - version {VERSION}"));
     }
     if cli.get_errors().is_some()
@@ -138,7 +138,7 @@ fn main() -> Result<(), Box<dyn GenError>> {
         return Err("No any command line arguments accepted currently".into());
     }
     let Ok(env) = fs::read_to_string("env.conf")
-        .inspect_err(|e| eprintln!("Can't read 'env.conf' because: {e:?}"))
+        .inspect_err(|e| eprintln!("Can't read 'env.conf', because: {e:?}"))
     else {
         return Err("Check 'env.conf' file in the current directory".into());
     };
