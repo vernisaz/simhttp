@@ -160,10 +160,9 @@ and safe it under phpinfo.php. Run the file using a browser and then use the *ph
 
 Search for `date.timezone` (Ctrl+W), uncomment the line and set the desired timezone. Save *.ini* file.
 
-## How to compare it to miniserve and other Rust webservers
-If you didn't check [miniserve](https://github.com/svenstaro/miniserve/tree/master) yet, then do it now. More likely you will be satisfied with it.
- Major difference of the _TRWS_ is that it can be extended by CGI scripts
-and CGI websocket endpoints. For example, I implemented [TOTP](https://github.com/vernisaz/simtotp) with web interface,
+## How to compare it other Rust webservers
+There are plenty of Rust webservers, however this one has one feature making it standing apart. _TRWS_ can be extended by CGI scripts
+and CGI websocket endpoints. It doesn't require to rebuild the server. For example, I implemented [TOTP](https://github.com/vernisaz/simtotp) with web interface,
 I couldn't do without _SimHTTP_. SimHTTP is decoupled from deployed Rust applications, and you can deploy them without any change
 of the server and even dynamically.
 
