@@ -65,7 +65,7 @@ transfer encoding when it has one chunk.
 You need to checkout 3rd party repositories for the feature, and build the compressor crate as described
 [here](https://github.com/vernisaz/simple_rust_zip/blob/master/libdeflate/bee.7b).
 And then set `gzip` variable of [bee.7b](./bee.7b) to `true` (default value), when build the server. Note that *libdeflate*
-is actively developed repository including new processors update, so you may periodically check it out and re-build.
+is an actively developed repository including new processors update, so you may periodically check it out and re-build.
 
 ## Configuring
 One JSON file is used for configuring the server. The file has to be in the current working directory the server ran from.
@@ -143,7 +143,9 @@ Mac service should look similar to FreeBSD and I will document that after purcha
 
 
 ## Websocket
-The server provides a limited support of WebSocket protocol as WS-CGI. Only UTF-8 string packets are supported.
+The server provides a limited support of WebSocket protocol as WS-CGI. Only UTF-8 string packets are supported. There is no websocket packet boundary 
+on level the server. So you may introduce own packet boundary mechanism on tops of websocket packets. Note, the packets separation you need to implement
+as a business layer, and it isn't sub-protocols of websocket. 
 
 ## Popular CGI scripts
 How to use such CGI scripts, as _php\_cgi_, is described [there](https://github.com/vernisaz/simcom/blob/master/doc/PIs.md#installing-php-and-integrating-with-simhttp).
