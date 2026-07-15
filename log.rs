@@ -82,7 +82,7 @@ impl LogFile {
     pub fn new() -> Self {
         let created = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_millis() as u64;
         let name = format! {"simhttp-{created}"};
         let mut path = PathBuf::from(".");
