@@ -178,7 +178,7 @@ fn main() -> Result<(), Box<dyn GenError>> {
         {
             if let Ok(mut logger) = LOGGER.lock() {
                 let level = Level::from(*level as u32);
-                logger.info(&format! {"log level set to {:?}", &level});
+                logger.info(&format! {"log level set to {:?}", level});
                 logger.set_level(level);
             }
         } else if let Some(Text(val)) = log.get("type") {
@@ -1519,7 +1519,7 @@ fn read_mapping(mapping: &Vec<JsonData>) -> Vec<Mapping> {
             },
         })
     }
-    res.sort_by(|a, b| b.web_path.len().cmp(&a.web_path.len()));
+    res.sort_by_key(|b| std::cmp::Reverse(b.web_path.len()));
     res
 }
 
