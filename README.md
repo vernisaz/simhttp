@@ -144,7 +144,8 @@ Mac service should look similar to FreeBSD and I will document that after purcha
 ## Websocket
 The server provides a limited support of WebSocket protocol as WS-CGI. Only UTF-8 string packets are supported. There is no websocket packet boundary 
 on level the server. So you may introduce own packet boundary mechanism on tops of websocket packets. Note, the packets separation you need to implement
-as a business layer, and it isn't sub-protocols of websocket. 
+as a business layer, and you can call it as a sub-protocols of websocket. However a support
+of it relays on your implementation. 
 
 ## Popular CGI scripts
 How to use such CGI scripts, as _php\_cgi_, is described [there](https://github.com/vernisaz/simcom/blob/master/doc/PIs.md#installing-php-and-integrating-with-simhttp).
